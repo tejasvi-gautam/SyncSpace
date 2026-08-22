@@ -245,3 +245,4 @@ The root directory intentionally has no `package.json`, so package scripts must 
 - Socket.IO is listed but currently unused, so “real-time” is a product intention rather than an implemented backend behavior.
 - `Home.jsx` and `Room.jsx` are alternate, disconnected router-oriented components.
 - The next high-value task is to resolve the frontend component/navigation split, then wire API and realtime behavior.
+-sdfghjkl;
