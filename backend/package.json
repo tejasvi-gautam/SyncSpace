@@ -23,7 +23,7 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.9.2",
     "parser": "^0.1.4",
-    "socket.io": "^4.8.1",
+    "socket.io": "^4.8.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
