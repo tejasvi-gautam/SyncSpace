@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSyncSpaceStore } from "../store/syncSpaceStore";
+import CodeEditor from "./CodeEditor";
+import "./Whiteboard.css";
 
 function Whiteboard({ roomId }) {
     const canvasRef = useRef(null);
@@ -526,6 +528,8 @@ function Whiteboard({ roomId }) {
                 onPointerCancel={stopDrawing}
                 onClick={openTextEditor}
             />
+
+            <CodeEditor roomId={roomId} />
 
             {/* TEXT INPUT */}
 
