@@ -401,177 +401,154 @@ function Whiteboard({ roomId }) {
 
     return (
         <div className="whiteboard-container">
-
-            {/* TOOLBAR */}
-
-            <div className="toolbar">
-
-                {/* COLOR */}
-
-                <label>
-                    Color:
-
-                    <input
-                        type="color"
-                        value={color}
-                        onChange={(event) =>
-                            setColor(
-                                event.target.value
-                            )
-                        }
-                    />
-                </label>
-
-                {/* BRUSH SIZE */}
-
-                <label>
-                    Brush Size:
-
-                    <input
-                        type="range"
-                        min="1"
-                        max="30"
-                        value={lineWidth}
-                        onChange={(event) =>
-                            setLineWidth(
-                                Number(
+            <div className="whiteboard-panel whiteboard-panel-canvas">
+                <div className="toolbar">
+                    <label>
+                        Color:
+                        <input
+                            type="color"
+                            value={color}
+                            onChange={(event) =>
+                                setColor(
                                     event.target.value
                                 )
-                            )
-                        }
-                    />
-                </label>
+                            }
+                        />
+                    </label>
 
-                {/* TEXT SIZE */}
-
-                <label>
-                    Text Size:
-
-                    <input
-                        type="range"
-                        min="12"
-                        max="64"
-                        value={textSize}
-                        onChange={(event) =>
-                            setTextSize(
-                                Number(
-                                    event.target.value
+                    <label>
+                        Brush Size:
+                        <input
+                            type="range"
+                            min="1"
+                            max="30"
+                            value={lineWidth}
+                            onChange={(event) =>
+                                setLineWidth(
+                                    Number(
+                                        event.target.value
+                                    )
                                 )
-                            )
+                            }
+                        />
+                    </label>
+
+                    <label>
+                        Text Size:
+                        <input
+                            type="range"
+                            min="12"
+                            max="64"
+                            value={textSize}
+                            onChange={(event) =>
+                                setTextSize(
+                                    Number(
+                                        event.target.value
+                                    )
+                                )
+                            }
+                        />
+                    </label>
+
+                    <button
+                        className={
+                            tool === "draw"
+                                ? "active-tool"
+                                : ""
                         }
+                        onClick={() =>
+                            setTool("draw")
+                        }
+                    >
+                        🖊 Draw
+                    </button>
+
+                    <button
+                        className={
+                            tool === "eraser"
+                                ? "active-tool"
+                                : ""
+                        }
+                        onClick={() =>
+                            setTool("eraser")
+                        }
+                    >
+                        Eraser
+                    </button>
+
+                    <button
+                        className={
+                            tool === "text"
+                                ? "active-tool"
+                                : ""
+                        }
+                        onClick={() =>
+                            setTool("text")
+                        }
+                    >
+                        Text
+                    </button>
+
+                    <button onClick={clearBoard}>
+                        🗑 Clear Board
+                    </button>
+                </div>
+
+                <div className="canvas-area">
+                    <canvas
+                        ref={canvasRef}
+                        className="whiteboard"
+                        onPointerDown={startDrawing}
+                        onPointerMove={draw}
+                        onPointerUp={stopDrawing}
+                        onPointerCancel={stopDrawing}
+                        onClick={openTextEditor}
                     />
-                </label>
 
-                {/* DRAW */}
+                    {textEditor && (
+                        <input
+                            autoFocus
+                            className="canvas-text-editor"
+                            style={{
+                                left: textEditor.x,
+                                top:
+                                    textEditor.y -
+                                    textSize,
+                            }}
+                            placeholder="Type here"
+                            value={textEditor.value}
+                            onPointerDown={(event) =>
+                                event.stopPropagation()
+                            }
+                            onChange={(event) =>
+                                setTextEditor({
+                                    ...textEditor,
+                                    value:
+                                        event.target.value,
+                                })
+                            }
+                            onBlur={commitText}
+                            onKeyDown={(event) => {
+                                if (
+                                    event.key === "Enter"
+                                ) {
+                                    commitText();
+                                }
 
-                <button
-                    className={
-                        tool === "draw"
-                            ? "active-tool"
-                            : ""
-                    }
-                    onClick={() =>
-                        setTool("draw")
-                    }
-                >
-                    🖊 Draw
-                </button>
-
-                {/* ERASER */}
-
-                <button
-                    className={
-                        tool === "eraser"
-                            ? "active-tool"
-                            : ""
-                    }
-                    onClick={() =>
-                        setTool("eraser")
-                    }
-                >
-                    Eraser
-                </button>
-
-                {/* TEXT */}
-
-                <button
-                    className={
-                        tool === "text"
-                            ? "active-tool"
-                            : ""
-                    }
-                    onClick={() =>
-                        setTool("text")
-                    }
-                >
-                    Text
-                </button>
-
-                {/* CLEAR */}
-
-                <button
-                    onClick={clearBoard}
-                >
-                    🗑 Clear Board
-                </button>
-
+                                if (
+                                    event.key === "Escape"
+                                ) {
+                                    setTextEditor(null);
+                                }
+                            }}
+                        />
+                    )}
+                </div>
             </div>
 
-            {/* CANVAS */}
-
-            <canvas
-                ref={canvasRef}
-                className="whiteboard"
-                onPointerDown={startDrawing}
-                onPointerMove={draw}
-                onPointerUp={stopDrawing}
-                onPointerCancel={stopDrawing}
-                onClick={openTextEditor}
-            />
-
-            <CodeEditor roomId={roomId} />
-
-            {/* TEXT INPUT */}
-
-            {textEditor && (
-                <input
-                    autoFocus
-                    className="canvas-text-editor"
-                    style={{
-                        left: textEditor.x,
-                        top:
-                            textEditor.y -
-                            textSize,
-                    }}
-                    placeholder="Type here"
-                    value={textEditor.value}
-                    onPointerDown={(event) =>
-                        event.stopPropagation()
-                    }
-                    onChange={(event) =>
-                        setTextEditor({
-                            ...textEditor,
-                            value:
-                                event.target.value,
-                        })
-                    }
-                    onBlur={commitText}
-                    onKeyDown={(event) => {
-                        if (
-                            event.key === "Enter"
-                        ) {
-                            commitText();
-                        }
-
-                        if (
-                            event.key === "Escape"
-                        ) {
-                            setTextEditor(null);
-                        }
-                    }}
-                />
-            )}
-
+            <div className="whiteboard-panel whiteboard-panel-editor">
+                <CodeEditor roomId={roomId} />
+            </div>
         </div>
     );
 }

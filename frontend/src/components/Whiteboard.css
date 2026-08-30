@@ -29,6 +29,43 @@ body {
   overflow: hidden;
 }
 
+.whiteboard-container {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  width: 100%;
+  height: calc(100vh - 120px);
+  min-height: 520px;
+  padding: 18px;
+  background: linear-gradient(180deg, #eef2ff 0%, #f8fafc 100%);
+}
+
+.whiteboard-panel {
+  min-width: 0;
+  border: 1px solid #dfe7f3;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
+  overflow: hidden;
+}
+
+.whiteboard-panel-canvas {
+  flex: 1.45;
+  display: flex;
+  flex-direction: column;
+}
+
+.whiteboard-panel-editor {
+  flex: 0.95;
+  display: flex;
+  min-width: 360px;
+}
+
+.whiteboard-panel-editor .code-editor-panel {
+  flex: 1;
+  height: 100%;
+}
+
 /* =====================================================
    MAIN APP
 ===================================================== */
