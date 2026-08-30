@@ -7,6 +7,8 @@ import connectDB from "./config/db.js";
 import authRoutes from "./routes/auth.routes.js";
 import http from "http";
 import { Server } from "socket.io";
+import { socketAuth } from "./middleware/socketAuth.middleware.js";
+
 dotenv.config();
 
 const app = express();
@@ -22,6 +24,7 @@ const io = new Server(server, {
         credentials: true
     }
 });
+io.use(socketAuth);
 io.on("connection", (socket) => {
     console.log("Socket connected:", socket.id);
 
@@ -57,7 +60,7 @@ const PORT = process.env.PORT || 54321;
 const startServer = async () => {
     await connectDB();
 
-    app.listen(PORT, () => {
+    server.listen(PORT, () => {
         console.log(` SyncSpace server running on port ${PORT}`);
     });
 };
