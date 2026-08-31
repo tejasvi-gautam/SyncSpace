@@ -1,6 +1,6 @@
 
 import "./Landing.css";
-
+import socket from "../socket";
 export default function Landing({
     name,
     setName,

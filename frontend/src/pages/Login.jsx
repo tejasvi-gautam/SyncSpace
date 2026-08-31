@@ -11,6 +11,7 @@ export default function Login() {
     useEffect(() => {
         socket.on("connect", () => {
             console.log("SOCKET CONNECTED:", socket.id);
+            
         });
 
         socket.on("connect_error", (error) => {

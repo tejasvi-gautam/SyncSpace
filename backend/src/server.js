@@ -8,6 +8,7 @@ import authRoutes from "./routes/auth.routes.js";
 import http from "http";
 import { Server } from "socket.io";
 import { socketAuth } from "./middleware/socketAuth.middleware.js";
+import { initializeSocket } from "./socket/socket.handler.js";
 
 dotenv.config();
 
@@ -30,13 +31,8 @@ const io = new Server(server, {
     }
 });
 io.use(socketAuth);
-io.on("connection", (socket) => {
-    console.log("Socket connected:", socket.id);
+initializeSocket(io);
 
-    socket.on("disconnect", () => {
-        console.log("Socket disconnected:", socket.id);
-    });
-});
 
 // Health route
 app.get("/", (req, res) => {

@@ -1,12 +1,11 @@
 import { useParams } from "react-router-dom";
-import Whiteboard from "../components/Whiteboard";
+import Whiteboard from "./components/Whiteboard";
 
 function Room() {
     const { roomId } = useParams();
 
     return (
         <div className="room-page">
-
             <header className="room-header">
                 <h1>SyncSpace</h1>
 
@@ -16,11 +15,8 @@ function Room() {
             </header>
 
             <main className="room-content">
-
-                <Whiteboard />
-
+                <Whiteboard roomId={roomId} />
             </main>
-
         </div>
     );
 }

@@ -1,13 +1,15 @@
+
 import { useEffect, useRef, useState } from "react";
 import { useSyncSpaceStore } from "../store/syncSpaceStore";
 import CodeEditor from "./CodeEditor";
+import socket from "../socket";
 import "./Whiteboard.css";
 
-function Whiteboard({ roomId }) {
+function Whiteboard({ roomId, userName }) {
     const canvasRef = useRef(null);
     const drawingRef = useRef(false);
+    const currentItemRef = useRef(null);
     const strokesRef = useRef([]);
-    const channelRef = useRef(null);
 
     // ==========================================
     // ZUSTAND STATE
@@ -44,34 +46,80 @@ function Whiteboard({ roomId }) {
     const [textSize, setTextSize] = useState(24);
     const [textEditor, setTextEditor] = useState(null);
 
+    // Other users' cursors
+    const [remoteCursors, setRemoteCursors] = useState({});
+
     // ==========================================
-    // BROADCAST MESSAGE
+    // USER ID / CURSOR COLOR
+    // ==========================================
+
+    const userIdRef = useRef(
+        localStorage.getItem("syncspace_user_id") ||
+        crypto.randomUUID()
+    );
+
+    useEffect(() => {
+        localStorage.setItem(
+            "syncspace_user_id",
+            userIdRef.current
+        );
+    }, []);
+
+    const cursorColorRef = useRef(
+        localStorage.getItem("syncspace_cursor_color") ||
+        "#6366f1"
+    );
+
+    useEffect(() => {
+        localStorage.setItem(
+            "syncspace_cursor_color",
+            cursorColorRef.current
+        );
+    }, []);
+
+    // ==========================================
+    // SEND EVENT TO BACKEND
     // ==========================================
 
     const publish = (message) => {
-        channelRef.current?.postMessage(message);
+        if (!roomId) return;
+
+        socket.emit("whiteboard-event", {
+            roomId,
+            userId: userIdRef.current,
+            userName: userName || "Guest",
+            cursorColor: cursorColorRef.current,
+            ...message,
+        });
     };
 
     // ==========================================
-    // DRAW ITEM
+    // DRAW ONE ITEM
     // ==========================================
 
     const drawItem = (item) => {
         const canvas = canvasRef.current;
 
-        if (!canvas) return;
+        if (!canvas || !item) return;
 
         const context = canvas.getContext("2d");
 
+        context.save();
+
         context.fillStyle = item.color;
         context.strokeStyle = item.color;
-        context.lineWidth = item.width;
+        context.lineWidth = item.width || 3;
         context.lineCap = "round";
         context.lineJoin = "round";
 
-        // Draw text
+        // ======================================
+        // TEXT
+        // ======================================
+
         if (item.type === "text") {
-            context.font = `${item.width}px sans-serif`;
+            context.globalCompositeOperation = "source-over";
+
+            context.font = `${item.width || 24}px sans-serif`;
 
             context.fillText(
                 item.text,
@@ -79,14 +127,47 @@ function Whiteboard({ roomId }) {
                 item.points[0].y
             );
 
+            context.restore();
             return;
         }
 
-        // Eraser
+        // ======================================
+        // RECTANGLE
+        // ======================================
+
+        if (item.type === "rectangle") {
+            context.globalCompositeOperation = "source-over";
+
+            const start = item.points[0];
+            const end = item.points[item.points.length - 1];
+
+            const width = end.x - start.x;
+            const height = end.y - start.y;
+
+            context.strokeRect(
+                start.x,
+                start.y,
+                width,
+                height
+            );
+
+            context.restore();
+            return;
+        }
+
+        // ======================================
+        // FREEHAND / ERASER
+        // ======================================
+
         context.globalCompositeOperation =
             item.tool === "eraser"
                 ? "destination-out"
                 : "source-over";
+
+        if (!item.points || item.points.length === 0) {
+            context.restore();
+            return;
+        }
 
         context.beginPath();
 
@@ -95,20 +176,18 @@ function Whiteboard({ roomId }) {
             item.points[0].y
         );
 
-        item.points
-            .slice(1)
-            .forEach((point) => {
-                context.lineTo(point.x, point.y);
-            });
+        item.points.slice(1).forEach((point) => {
+            context.lineTo(point.x, point.y);
+        });
 
         context.stroke();
         context.closePath();
 
-        context.globalCompositeOperation = "source-over";
+        context.restore();
     };
 
     // ==========================================
-    // REDRAW CANVAS
+    // REDRAW ENTIRE CANVAS
     // ==========================================
 
     const redraw = () => {
@@ -121,11 +200,16 @@ function Whiteboard({ roomId }) {
         context.clearRect(
             0,
             0,
-            canvas.clientWidth,
-            canvas.clientHeight
+            canvas.width,
+            canvas.height
         );
 
         strokesRef.current.forEach(drawItem);
+
+        // Draw item currently being created
+        if (currentItemRef.current) {
+            drawItem(currentItemRef.current);
+        }
     };
 
     // ==========================================
@@ -140,8 +224,15 @@ function Whiteboard({ roomId }) {
         const resizeCanvas = () => {
             const rect = canvas.getBoundingClientRect();
 
+            const previousWidth = canvas.width;
+            const previousHeight = canvas.height;
+
             canvas.width = rect.width;
             canvas.height = rect.height;
+
+            // Avoid unused-variable warnings
+            void previousWidth;
+            void previousHeight;
 
             const context = canvas.getContext("2d");
 
@@ -167,28 +258,24 @@ function Whiteboard({ roomId }) {
     }, []);
 
     // ==========================================
-    // REAL-TIME ROOM CONNECTION
+    // SOCKET.IO WHITEBOARD CONNECTION
     // ==========================================
 
     useEffect(() => {
-        if (
-            !roomId ||
-            typeof BroadcastChannel === "undefined"
-        ) {
-            return undefined;
-        }
+        if (!roomId) return;
 
-        const channel = new BroadcastChannel(
-            `syncspace-room-${roomId}`
-        );
+        const handleWhiteboardEvent = (message) => {
+            if (!message) return;
 
-        channelRef.current = channel;
+            if (message.roomId !== roomId) return;
 
-        channel.onmessage = (event) => {
-            const message = event.data;
+            // ======================================
+            // REMOTE DRAWING
+            // ======================================
 
-            // Receive new drawing
             if (message.type === "whiteboard-item") {
+                if (!message.item) return;
+
                 strokesRef.current.push(
                     message.item
                 );
@@ -196,66 +283,114 @@ function Whiteboard({ roomId }) {
                 redraw();
             }
 
-            // Clear board
+            // ======================================
+            // CLEAR BOARD
+            // ======================================
+
             if (message.type === "whiteboard-clear") {
                 strokesRef.current = [];
 
+                currentItemRef.current = null;
+
                 redraw();
             }
 
-            // Request current board
-            if (
-                message.type ===
-                "whiteboard-sync-request"
-            ) {
-                channel.postMessage({
-                    type: "whiteboard-sync-state",
-                    items: strokesRef.current,
+            // ======================================
+            // REMOTE CURSOR
+            // ======================================
+
+            if (message.type === "cursor-move") {
+                // Don't render our own cursor
+                if (
+                    message.userId ===
+                    userIdRef.current
+                ) {
+                    return;
+                }
+
+                setRemoteCursors((previous) => ({
+                    ...previous,
+                    [message.userId]: {
+                        userId: message.userId,
+                        userName:
+                            message.userName ||
+                            "Guest",
+                        color:
+                            message.cursorColor ||
+                            "#6366f1",
+                        x: message.x,
+                        y: message.y,
+                    },
+                }));
+            }
+
+            // ======================================
+            // USER LEFT
+            // ======================================
+
+            if (message.type === "cursor-leave") {
+                setRemoteCursors((previous) => {
+                    const next = {
+                        ...previous,
+                    };
+
+                    delete next[message.userId];
+
+                    return next;
                 });
-            }
-
-            // Receive current board
-            if (
-                message.type ===
-                    "whiteboard-sync-state" &&
-                strokesRef.current.length === 0
-            ) {
-                strokesRef.current =
-                    message.items;
-
-                redraw();
             }
         };
 
-        channel.postMessage({
-            type: "whiteboard-sync-request",
-        });
+        socket.on(
+            "whiteboard-event",
+            handleWhiteboardEvent
+        );
 
         return () => {
-            channel.close();
-            channelRef.current = null;
+            socket.off(
+                "whiteboard-event",
+                handleWhiteboardEvent
+            );
         };
     }, [roomId]);
 
     // ==========================================
-    // GET MOUSE POSITION
+    // GET CANVAS POSITION
     // ==========================================
 
     const getPosition = (event) => {
         const canvas = canvasRef.current;
 
+        if (!canvas) {
+            return {
+                x: 0,
+                y: 0,
+            };
+        }
+
         const rect =
             canvas.getBoundingClientRect();
 
-        const point =
-            event.clientX === undefined
-                ? event.touches[0]
-                : event;
-
         return {
-            x: point.clientX - rect.left,
-            y: point.clientY - rect.top,
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top,
         };
+    };
+
+    // ==========================================
+    // SEND CURSOR POSITION
+    // ==========================================
+
+    const sendCursorPosition = (event) => {
+        if (!roomId) return;
+
+        const point = getPosition(event);
+
+        publish({
+            type: "cursor-move",
+            x: point.x,
+            y: point.y,
+        });
     };
 
     // ==========================================
@@ -263,23 +398,119 @@ function Whiteboard({ roomId }) {
     // ==========================================
 
     const startDrawing = (event) => {
-        if (tool === "text") {
-            return;
-        }
+        if (tool === "text") return;
 
         event.currentTarget.setPointerCapture?.(
             event.pointerId
         );
 
+        const point = getPosition(event);
+
         drawingRef.current = true;
 
-        strokesRef.current.push({
+        // ======================================
+        // RECTANGLE
+        // ======================================
+
+        if (tool === "rectangle") {
+            currentItemRef.current = {
+                type: "rectangle",
+                color,
+                width: lineWidth,
+                points: [
+                    point,
+                    point,
+                ],
+            };
+
+            redraw();
+
+            return;
+        }
+
+        // ======================================
+        // FREEHAND / ERASER
+        // ======================================
+
+        currentItemRef.current = {
             type: "stroke",
-            tool: tool,
-            color: color,
+            tool,
+            color,
             width: lineWidth,
-            points: [getPosition(event)],
-        });
+            points: [point],
+        };
+
+        redraw();
+    };
+
+    // ==========================================
+    // DRAW / UPDATE CURRENT ITEM
+    // ==========================================
+
+    const draw = (event) => {
+        // Always send cursor movement
+        sendCursorPosition(event);
+
+        if (!drawingRef.current) {
+            return;
+        }
+
+        const point = getPosition(event);
+
+        const item = currentItemRef.current;
+
+        if (!item) return;
+
+        // ======================================
+        // RECTANGLE
+        // ======================================
+
+        if (item.type === "rectangle") {
+            item.points[1] = point;
+
+            redraw();
+
+            return;
+        }
+
+        // ======================================
+        // FREEHAND
+        // ======================================
+
+        item.points.push(point);
+
+        redraw();
+    };
+
+    // ==========================================
+    // STOP DRAWING
+    // ==========================================
+
+    const stopDrawing = (event) => {
+        if (!drawingRef.current) {
+            return;
+        }
+
+        const item = currentItemRef.current;
+
+        if (item) {
+            strokesRef.current.push(item);
+
+            publish({
+                type: "whiteboard-item",
+                item,
+            });
+        }
+
+        drawingRef.current = false;
+
+        currentItemRef.current = null;
+
+        redraw();
+
+        event?.currentTarget.releasePointerCapture?.(
+            event.pointerId
+        );
     };
 
     // ==========================================
@@ -303,40 +534,7 @@ function Whiteboard({ roomId }) {
     };
 
     // ==========================================
-    // DRAW
-    // ==========================================
-
-    const draw = (event) => {
-        if (!drawingRef.current) {
-            return;
-        }
-
-        strokesRef.current
-            .at(-1)
-            .points.push(
-                getPosition(event)
-            );
-
-        redraw();
-    };
-
-    // ==========================================
-    // STOP DRAWING
-    // ==========================================
-
-    const stopDrawing = () => {
-        if (drawingRef.current) {
-            publish({
-                type: "whiteboard-item",
-                item: strokesRef.current.at(-1),
-            });
-        }
-
-        drawingRef.current = false;
-    };
-
-    // ==========================================
-    // ADD TEXT
+    // COMMIT TEXT
     // ==========================================
 
     const commitText = () => {
@@ -345,9 +543,9 @@ function Whiteboard({ roomId }) {
             return;
         }
 
-        strokesRef.current.push({
+        const item = {
             type: "text",
-            color: color,
+            color,
             width: textSize,
             text: textEditor.value.trim(),
             points: [
@@ -356,11 +554,13 @@ function Whiteboard({ roomId }) {
                     y: textEditor.y,
                 },
             ],
-        });
+        };
+
+        strokesRef.current.push(item);
 
         publish({
             type: "whiteboard-item",
-            item: strokesRef.current.at(-1),
+            item,
         });
 
         setTextEditor(null);
@@ -373,26 +573,25 @@ function Whiteboard({ roomId }) {
     // ==========================================
 
     const clearBoard = () => {
-        const canvas = canvasRef.current;
-
-        const context =
-            canvas.getContext("2d");
-
         strokesRef.current = [];
 
-        context.clearRect(
-            0,
-            0,
-            canvas.width,
-            canvas.height
-        );
+        currentItemRef.current = null;
+
+        redraw();
 
         publish({
             type: "whiteboard-clear",
         });
+    };
 
-        context.globalCompositeOperation =
-            "source-over";
+    // ==========================================
+    // CURSOR LEAVE
+    // ==========================================
+
+    const handlePointerLeave = () => {
+        publish({
+            type: "cursor-leave",
+        });
     };
 
     // ==========================================
@@ -401,10 +600,20 @@ function Whiteboard({ roomId }) {
 
     return (
         <div className="whiteboard-container">
+
+            {/* ====================================
+                WHITEBOARD
+            ==================================== */}
+
             <div className="whiteboard-panel whiteboard-panel-canvas">
+
+                {/* TOOLBAR */}
+
                 <div className="toolbar">
+
                     <label>
                         Color:
+
                         <input
                             type="color"
                             value={color}
@@ -417,7 +626,8 @@ function Whiteboard({ roomId }) {
                     </label>
 
                     <label>
-                        Brush Size:
+                        Brush:
+
                         <input
                             type="range"
                             min="1"
@@ -434,7 +644,8 @@ function Whiteboard({ roomId }) {
                     </label>
 
                     <label>
-                        Text Size:
+                        Text:
+
                         <input
                             type="range"
                             min="12"
@@ -450,6 +661,8 @@ function Whiteboard({ roomId }) {
                         />
                     </label>
 
+                    {/* DRAW */}
+
                     <button
                         className={
                             tool === "draw"
@@ -463,6 +676,23 @@ function Whiteboard({ roomId }) {
                         🖊 Draw
                     </button>
 
+                    {/* RECTANGLE */}
+
+                    <button
+                        className={
+                            tool === "rectangle"
+                                ? "active-tool"
+                                : ""
+                        }
+                        onClick={() =>
+                            setTool("rectangle")
+                        }
+                    >
+                        ▭ Rectangle
+                    </button>
+
+                    {/* ERASER */}
+
                     <button
                         className={
                             tool === "eraser"
@@ -473,8 +703,10 @@ function Whiteboard({ roomId }) {
                             setTool("eraser")
                         }
                     >
-                        Eraser
+                        🧹 Eraser
                     </button>
+
+                    {/* TEXT */}
 
                     <button
                         className={
@@ -486,24 +718,76 @@ function Whiteboard({ roomId }) {
                             setTool("text")
                         }
                     >
-                        Text
+                        T Text
                     </button>
 
-                    <button onClick={clearBoard}>
-                        🗑 Clear Board
+                    {/* CLEAR */}
+
+                    <button
+                        onClick={clearBoard}
+                    >
+                        🗑 Clear
                     </button>
+
                 </div>
 
+                {/* CANVAS */}
+
                 <div className="canvas-area">
+
                     <canvas
                         ref={canvasRef}
                         className="whiteboard"
-                        onPointerDown={startDrawing}
-                        onPointerMove={draw}
-                        onPointerUp={stopDrawing}
-                        onPointerCancel={stopDrawing}
-                        onClick={openTextEditor}
+                        onPointerDown={
+                            startDrawing
+                        }
+                        onPointerMove={
+                            draw
+                        }
+                        onPointerUp={
+                            stopDrawing
+                        }
+                        onPointerCancel={
+                            stopDrawing
+                        }
+                        onPointerLeave={
+                            handlePointerLeave
+                        }
+                        onClick={
+                            openTextEditor
+                        }
                     />
+
+                    {/* ==================================
+                        REMOTE CURSORS
+                    ================================== */}
+
+                    {Object.values(
+                        remoteCursors
+                    ).map((cursor) => (
+                        <div
+                            key={cursor.userId}
+                            className="remote-cursor"
+                            style={{
+                                left: cursor.x,
+                                top: cursor.y,
+                                "--cursor-color":
+                                    cursor.color,
+                            }}
+                        >
+                            <div className="cursor-pointer">
+                                ◆
+                            </div>
+
+                            <div className="cursor-label">
+                                {cursor.userName}
+                            </div>
+                        </div>
+                    ))}
+
+                    {/* ==================================
+                        TEXT INPUT
+                    ================================== */}
 
                     {textEditor && (
                         <input
@@ -514,9 +798,12 @@ function Whiteboard({ roomId }) {
                                 top:
                                     textEditor.y -
                                     textSize,
+                                fontSize: textSize,
                             }}
                             placeholder="Type here"
-                            value={textEditor.value}
+                            value={
+                                textEditor.value
+                            }
                             onPointerDown={(event) =>
                                 event.stopPropagation()
                             }
@@ -524,33 +811,50 @@ function Whiteboard({ roomId }) {
                                 setTextEditor({
                                     ...textEditor,
                                     value:
-                                        event.target.value,
+                                        event.target
+                                            .value,
                                 })
                             }
                             onBlur={commitText}
                             onKeyDown={(event) => {
                                 if (
-                                    event.key === "Enter"
+                                    event.key ===
+                                    "Enter"
                                 ) {
                                     commitText();
                                 }
 
                                 if (
-                                    event.key === "Escape"
+                                    event.key ===
+                                    "Escape"
                                 ) {
-                                    setTextEditor(null);
+                                    setTextEditor(
+                                        null
+                                    );
                                 }
                             }}
                         />
                     )}
+
                 </div>
+
             </div>
 
+            {/* ====================================
+                CODE EDITOR
+            ==================================== */}
+
             <div className="whiteboard-panel whiteboard-panel-editor">
-                <CodeEditor roomId={roomId} />
+
+                <CodeEditor
+                    roomId={roomId}
+                />
+
             </div>
+
         </div>
     );
 }
 
 export default Whiteboard;
+
