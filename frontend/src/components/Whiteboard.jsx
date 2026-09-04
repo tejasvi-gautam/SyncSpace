@@ -1,9 +1,27 @@
-
 import { useEffect, useRef, useState } from "react";
 import { useSyncSpaceStore } from "../store/syncSpaceStore";
 import CodeEditor from "./CodeEditor";
 import socket from "../socket";
 import "./Whiteboard.css";
+
+const TOOLS = [
+    { id: "select", icon: "↖", label: "Select", key: "V" },
+    { id: "draw", icon: "✎", label: "Pen", key: "P" },
+    { id: "eraser", icon: "⌫", label: "Eraser", key: "E" },
+    { id: "line", icon: "╱", label: "Line", key: "L" },
+    { id: "arrow", icon: "→", label: "Arrow", key: "A" },
+    { id: "rectangle", icon: "□", label: "Rect", key: "R" },
+    { id: "circle", icon: "○", label: "Circle", key: "C" },
+    { id: "text", icon: "T", label: "Text", key: "T" },
+];
+
+function createId() {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 function Whiteboard({ roomId, userName }) {
     const canvasRef = useRef(null);
@@ -11,9 +29,10 @@ function Whiteboard({ roomId, userName }) {
     const currentItemRef = useRef(null);
     const strokesRef = useRef([]);
 
-    // ==========================================
-    // ZUSTAND STATE
-    // ==========================================
+    const undoStackRef = useRef([]);
+    const redoStackRef = useRef([]);
+
+    const lastCursorPublishRef = useRef(0);
 
     const color = useSyncSpaceStore(
         (state) => state.selectedColor
@@ -39,31 +58,16 @@ function Whiteboard({ roomId, userName }) {
         (state) => state.setSelectedTool
     );
 
-    // ==========================================
-    // LOCAL STATE
-    // ==========================================
-
     const [textSize, setTextSize] = useState(24);
     const [textEditor, setTextEditor] = useState(null);
-
-    // Other users' cursors
     const [remoteCursors, setRemoteCursors] = useState({});
-
-    // ==========================================
-    // USER ID / CURSOR COLOR
-    // ==========================================
+    const [showHelp, setShowHelp] = useState(false);
+    const [copied, setCopied] = useState(false);
 
     const userIdRef = useRef(
         localStorage.getItem("syncspace_user_id") ||
-        crypto.randomUUID()
+        createId()
     );
-
-    useEffect(() => {
-        localStorage.setItem(
-            "syncspace_user_id",
-            userIdRef.current
-        );
-    }, []);
 
     const cursorColorRef = useRef(
         localStorage.getItem("syncspace_cursor_color") ||
@@ -72,14 +76,15 @@ function Whiteboard({ roomId, userName }) {
 
     useEffect(() => {
         localStorage.setItem(
+            "syncspace_user_id",
+            userIdRef.current
+        );
+
+        localStorage.setItem(
             "syncspace_cursor_color",
             cursorColorRef.current
         );
     }, []);
-
-    // ==========================================
-    // SEND EVENT TO BACKEND
-    // ==========================================
 
     const publish = (message) => {
         if (!roomId) return;
@@ -93,9 +98,20 @@ function Whiteboard({ roomId, userName }) {
         });
     };
 
-    // ==========================================
-    // DRAW ONE ITEM
-    // ==========================================
+    const getPosition = (event) => {
+        const canvas = canvasRef.current;
+
+        if (!canvas) {
+            return { x: 0, y: 0 };
+        }
+
+        const rect = canvas.getBoundingClientRect();
+
+        return {
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top,
+        };
+    };
 
     const drawItem = (item) => {
         const canvas = canvasRef.current;
@@ -104,25 +120,36 @@ function Whiteboard({ roomId, userName }) {
 
         const context = canvas.getContext("2d");
 
+        if (!context) return;
+
         context.save();
 
-        context.fillStyle = item.color;
-        context.strokeStyle = item.color;
+        context.fillStyle = item.color || "#111827";
+        context.strokeStyle = item.color || "#111827";
         context.lineWidth = item.width || 3;
         context.lineCap = "round";
         context.lineJoin = "round";
 
-        // ======================================
-        // TEXT
-        // ======================================
+        if (item.tool === "eraser") {
+            context.globalCompositeOperation =
+                "destination-out";
+        } else {
+            context.globalCompositeOperation =
+                "source-over";
+        }
 
+        /*
+         * TEXT
+         */
         if (item.type === "text") {
-            context.globalCompositeOperation = "source-over";
+            context.globalCompositeOperation =
+                "source-over";
 
-            context.font = `${item.width || 24}px sans-serif`;
+            context.font =
+                `600 ${item.width || 24}px Inter, Arial, sans-serif`;
 
             context.fillText(
-                item.text,
+                item.text || "",
                 item.points[0].x,
                 item.points[0].y
             );
@@ -131,39 +158,119 @@ function Whiteboard({ roomId, userName }) {
             return;
         }
 
-        // ======================================
-        // RECTANGLE
-        // ======================================
-
+        /*
+         * RECTANGLE
+         */
         if (item.type === "rectangle") {
-            context.globalCompositeOperation = "source-over";
-
             const start = item.points[0];
             const end = item.points[item.points.length - 1];
-
-            const width = end.x - start.x;
-            const height = end.y - start.y;
 
             context.strokeRect(
                 start.x,
                 start.y,
-                width,
-                height
+                end.x - start.x,
+                end.y - start.y
             );
 
             context.restore();
             return;
         }
 
-        // ======================================
-        // FREEHAND / ERASER
-        // ======================================
+        /*
+         * CIRCLE
+         */
+        if (item.type === "circle") {
+            const start = item.points[0];
+            const end = item.points[item.points.length - 1];
 
-        context.globalCompositeOperation =
-            item.tool === "eraser"
-                ? "destination-out"
-                : "source-over";
+            const width = end.x - start.x;
+            const height = end.y - start.y;
 
+            const radiusX = Math.abs(width) / 2;
+            const radiusY = Math.abs(height) / 2;
+
+            const centerX = start.x + width / 2;
+            const centerY = start.y + height / 2;
+
+            context.beginPath();
+
+            context.ellipse(
+                centerX,
+                centerY,
+                Math.max(radiusX, 1),
+                Math.max(radiusY, 1),
+                0,
+                0,
+                Math.PI * 2
+            );
+
+            context.stroke();
+
+            context.restore();
+            return;
+        }
+
+        /*
+         * LINE
+         */
+        if (item.type === "line") {
+            const start = item.points[0];
+            const end = item.points[item.points.length - 1];
+
+            context.beginPath();
+            context.moveTo(start.x, start.y);
+            context.lineTo(end.x, end.y);
+            context.stroke();
+
+            context.restore();
+            return;
+        }
+
+        /*
+         * ARROW
+         */
+        if (item.type === "arrow") {
+            const start = item.points[0];
+            const end = item.points[item.points.length - 1];
+
+            const angle = Math.atan2(
+                end.y - start.y,
+                end.x - start.x
+            );
+
+            const arrowSize = Math.max(
+                8,
+                (item.width || 3) * 3
+            );
+
+            context.beginPath();
+            context.moveTo(start.x, start.y);
+            context.lineTo(end.x, end.y);
+            context.stroke();
+
+            context.beginPath();
+
+            context.moveTo(
+                end.x - arrowSize * Math.cos(angle - Math.PI / 6),
+                end.y - arrowSize * Math.sin(angle - Math.PI / 6)
+            );
+
+            context.lineTo(end.x, end.y);
+
+            context.lineTo(
+                end.x - arrowSize * Math.cos(angle + Math.PI / 6),
+                end.y - arrowSize * Math.sin(angle + Math.PI / 6)
+            );
+
+            context.stroke();
+
+            context.restore();
+            return;
+        }
+
+        /*
+         * FREEHAND / ERASER
+         */
         if (!item.points || item.points.length === 0) {
             context.restore();
             return;
@@ -186,16 +293,14 @@ function Whiteboard({ roomId, userName }) {
         context.restore();
     };
 
-    // ==========================================
-    // REDRAW ENTIRE CANVAS
-    // ==========================================
-
     const redraw = () => {
         const canvas = canvasRef.current;
 
         if (!canvas) return;
 
         const context = canvas.getContext("2d");
+
+        if (!context) return;
 
         context.clearRect(
             0,
@@ -206,35 +311,114 @@ function Whiteboard({ roomId, userName }) {
 
         strokesRef.current.forEach(drawItem);
 
-        // Draw item currently being created
         if (currentItemRef.current) {
             drawItem(currentItemRef.current);
         }
     };
 
-    // ==========================================
-    // CANVAS SIZE
-    // ==========================================
+    const saveHistory = () => {
+        undoStackRef.current.push(
+            JSON.stringify(strokesRef.current)
+        );
 
+        if (undoStackRef.current.length > 50) {
+            undoStackRef.current.shift();
+        }
+
+        redoStackRef.current = [];
+    };
+
+    const undo = () => {
+        if (strokesRef.current.length === 0) return;
+
+        redoStackRef.current.push(
+            JSON.stringify(strokesRef.current)
+        );
+
+        strokesRef.current.pop();
+
+        redraw();
+    };
+
+    const redo = () => {
+        const snapshot =
+            redoStackRef.current.pop();
+
+        if (!snapshot) return;
+
+        undoStackRef.current.push(
+            JSON.stringify(strokesRef.current)
+        );
+
+        strokesRef.current =
+            JSON.parse(snapshot);
+
+        redraw();
+    };
+
+    const clearBoard = () => {
+        if (strokesRef.current.length === 0) {
+            return;
+        }
+
+        const confirmed = window.confirm(
+            "Clear the entire whiteboard?"
+        );
+
+        if (!confirmed) return;
+
+        saveHistory();
+
+        strokesRef.current = [];
+        currentItemRef.current = null;
+
+        redraw();
+
+        publish({
+            type: "whiteboard-clear",
+        });
+    };
+
+    /*
+     * CANVAS RESIZE
+     */
     useEffect(() => {
         const canvas = canvasRef.current;
 
         if (!canvas) return;
 
         const resizeCanvas = () => {
-            const rect = canvas.getBoundingClientRect();
+            const rect =
+                canvas.getBoundingClientRect();
 
-            const previousWidth = canvas.width;
-            const previousHeight = canvas.height;
+            const dpr =
+                window.devicePixelRatio || 1;
 
-            canvas.width = rect.width;
-            canvas.height = rect.height;
+            canvas.width =
+                Math.max(1, rect.width * dpr);
 
-            // Avoid unused-variable warnings
-            void previousWidth;
-            void previousHeight;
+            canvas.height =
+                Math.max(1, rect.height * dpr);
 
-            const context = canvas.getContext("2d");
+            canvas.style.width =
+                `${rect.width}px`;
+
+            canvas.style.height =
+                `${rect.height}px`;
+
+            const context =
+                canvas.getContext("2d");
+
+            if (!context) return;
+
+            context.setTransform(
+                dpr,
+                0,
+                0,
+                dpr,
+                0,
+                0
+            );
 
             context.lineCap = "round";
             context.lineJoin = "round";
@@ -257,23 +441,32 @@ function Whiteboard({ roomId, userName }) {
         };
     }, []);
 
-    // ==========================================
-    // SOCKET.IO WHITEBOARD CONNECTION
-    // ==========================================
-
+    /*
+     * SOCKET.IO EVENTS
+     */
     useEffect(() => {
         if (!roomId) return;
 
-        const handleWhiteboardEvent = (message) => {
+        const handleWhiteboardEvent = (
+            message
+        ) => {
             if (!message) return;
 
-            if (message.roomId !== roomId) return;
+            if (message.roomId !== roomId) {
+                return;
+            }
 
-            // ======================================
-            // REMOTE DRAWING
-            // ======================================
+            if (
+                message.userId ===
+                userIdRef.current
+            ) {
+                return;
+            }
 
-            if (message.type === "whiteboard-item") {
+            if (
+                message.type ===
+                "whiteboard-item"
+            ) {
                 if (!message.item) return;
 
                 strokesRef.current.push(
@@ -281,63 +474,66 @@ function Whiteboard({ roomId, userName }) {
                 );
 
                 redraw();
+
+                return;
             }
 
-            // ======================================
-            // CLEAR BOARD
-            // ======================================
-
-            if (message.type === "whiteboard-clear") {
+            if (
+                message.type ===
+                "whiteboard-clear"
+            ) {
                 strokesRef.current = [];
-
                 currentItemRef.current = null;
 
                 redraw();
+
+                return;
             }
 
-            // ======================================
-            // REMOTE CURSOR
-            // ======================================
-
-            if (message.type === "cursor-move") {
-                // Don't render our own cursor
-                if (
-                    message.userId ===
-                    userIdRef.current
-                ) {
-                    return;
-                }
-
-                setRemoteCursors((previous) => ({
-                    ...previous,
-                    [message.userId]: {
-                        userId: message.userId,
-                        userName:
-                            message.userName ||
-                            "Guest",
-                        color:
-                            message.cursorColor ||
-                            "#6366f1",
-                        x: message.x,
-                        y: message.y,
-                    },
-                }));
-            }
-
-            // ======================================
-            // USER LEFT
-            // ======================================
-
-            if (message.type === "cursor-leave") {
-                setRemoteCursors((previous) => {
-                    const next = {
+            if (
+                message.type ===
+                "cursor-move"
+            ) {
+                setRemoteCursors(
+                    (previous) => ({
                         ...previous,
-                    };
+                        [message.userId]: {
+                            userId:
+                                message.userId,
+                            userName:
+                                message.userName ||
+                                "Guest",
+                            color:
+                                message.cursorColor ||
+                                "#6366f1",
+                            x: message.x,
+                            y: message.y,
+                            lastSeen:
+                                Date.now(),
+                        },
+                    })
+                );
 
-                    delete next[message.userId];
+                return;
+            }
 
-                    return next;
-                });
+            if (
+                message.type ===
+                "cursor-leave"
+            ) {
+                setRemoteCursors(
+                    (previous) => {
+                        const next = {
+                            ...previous,
+                        };
+
+                        delete next[
+                            message.userId
+                        ];
+
+                        return next;
+                    }
+                );
             }
         };
 
@@ -354,49 +550,112 @@ function Whiteboard({ roomId, userName }) {
         };
     }, [roomId]);
 
-    // ==========================================
-    // GET CANVAS POSITION
-    // ==========================================
+    /*
+     * REMOVE OLD REMOTE CURSORS
+     */
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setRemoteCursors(
+                (previous) => {
+                    const now = Date.now();
+                    const next = {};
 
-    const getPosition = (event) => {
-        const canvas = canvasRef.current;
+                    Object.values(
+                        previous
+                    ).forEach((cursor) => {
+                        if (
+                            now -
+                                cursor.lastSeen <
+                            5000
+                        ) {
+                            next[
+                                cursor.userId
+                            ] = cursor;
+                        }
+                    });
 
-        if (!canvas) {
-            return {
-                x: 0,
-                y: 0,
-            };
-        }
+                    return next;
+                }
+            );
+        }, 2000);
 
-        const rect =
-            canvas.getBoundingClientRect();
-
-        return {
-            x: event.clientX - rect.left,
-            y: event.clientY - rect.top,
+        return () => {
+            clearInterval(interval);
         };
-    };
+    }, []);
 
-    // ==========================================
-    // SEND CURSOR POSITION
-    // ==========================================
+    /*
+     * KEYBOARD SHORTCUTS
+     */
+    useEffect(() => {
+        const handleKeyboard = (event) => {
+            const target =
+                event.target;
 
-    const sendCursorPosition = (event) => {
-        if (!roomId) return;
+            if (
+                target &&
+                (
+                    target.tagName === "INPUT" ||
+                    target.tagName === "TEXTAREA" ||
+                    target.tagName === "SELECT"
+                )
+            ) {
+                return;
+            }
 
-        const point = getPosition(event);
+            if (
+                event.ctrlKey &&
+                event.key.toLowerCase() === "z"
+            ) {
+                event.preventDefault();
 
-        publish({
-            type: "cursor-move",
-            x: point.x,
-            y: point.y,
-        });
-    };
+                if (event.shiftKey) {
+                    redo();
+                } else {
+                    undo();
+                }
 
-    // ==========================================
-    // START DRAWING
-    // ==========================================
+                return;
+            }
 
+            const shortcut =
+                event.key.toLowerCase();
+
+            const found =
+                TOOLS.find(
+                    (item) =>
+                        item.key.toLowerCase() ===
+                        shortcut
+                );
+
+            if (found) {
+                event.preventDefault();
+                setTool(found.id);
+            }
+
+            if (event.key === "?") {
+                setShowHelp(
+                    (previous) => !previous
+                );
+            }
+        };
+
+        window.addEventListener(
+            "keydown",
+            handleKeyboard
+        );
+
+        return () => {
+            window.removeEventListener(
+                "keydown",
+                handleKeyboard
+            );
+        };
+    }, [setTool]);
+
+    /*
+     * DRAWING
+     */
     const startDrawing = (event) => {
         if (tool === "text") return;
 
@@ -408,13 +667,17 @@ function Whiteboard({ roomId, userName }) {
 
         drawingRef.current = true;
 
-        // ======================================
-        // RECTANGLE
-        // ======================================
+        saveHistory();
 
-        if (tool === "rectangle") {
+        if (
+            tool === "line" ||
+            tool === "arrow" ||
+            tool === "rectangle" ||
+            tool === "circle"
+        ) {
             currentItemRef.current = {
-                type: "rectangle",
+                id: createId(),
+                type: tool,
                 color,
                 width: lineWidth,
                 points: [
@@ -428,11 +691,8 @@ function Whiteboard({ roomId, userName }) {
             return;
         }
 
-        // ======================================
-        // FREEHAND / ERASER
-        // ======================================
-
         currentItemRef.current = {
+            id: createId(),
             type: "stroke",
             tool,
             color,
@@ -443,13 +703,28 @@ function Whiteboard({ roomId, userName }) {
         redraw();
     };
 
-    // ==========================================
-    // DRAW / UPDATE CURRENT ITEM
-    // ==========================================
-
     const draw = (event) => {
-        // Always send cursor movement
-        sendCursorPosition(event);
+        if (!roomId) return;
+
+        const now = Date.now();
+
+        if (
+            now -
+                lastCursorPublishRef.current >
+            40
+        ) {
+            const point =
+                getPosition(event);
+
+            publish({
+                type: "cursor-move",
+                x: point.x,
+                y: point.y,
+            });
+
+            lastCursorPublishRef.current =
+                now;
+        }
 
         if (!drawingRef.current) {
             return;
@@ -457,15 +732,17 @@ function Whiteboard({ roomId, userName }) {
 
         const point = getPosition(event);
 
-        const item = currentItemRef.current;
+        const item =
+            currentItemRef.current;
 
         if (!item) return;
 
-        // ======================================
-        // RECTANGLE
-        // ======================================
-
-        if (item.type === "rectangle") {
+        if (
+            item.type === "line" ||
+            item.type === "arrow" ||
+            item.type === "rectangle" ||
+            item.type === "circle"
+        ) {
             item.points[1] = point;
 
             redraw();
@@ -473,27 +750,26 @@ function Whiteboard({ roomId, userName }) {
             return;
         }
 
-        // ======================================
-        // FREEHAND
-        // ======================================
-
         item.points.push(point);
 
         redraw();
     };
-
-    // ==========================================
-    // STOP DRAWING
-    // ==========================================
 
     const stopDrawing = (event) => {
         if (!drawingRef.current) {
             return;
         }
 
-        const item = currentItemRef.current;
+        const item =
+            currentItemRef.current;
 
-        if (item) {
+        if (
+            item &&
+            (
+                item.points.length > 1 ||
+                item.type !== "stroke"
+            )
+        ) {
             strokesRef.current.push(item);
 
             publish({
@@ -503,7 +779,6 @@ function Whiteboard({ roomId, userName }) {
         }
 
         drawingRef.current = false;
-
         currentItemRef.current = null;
 
         redraw();
@@ -513,10 +788,9 @@ function Whiteboard({ roomId, userName }) {
         );
     };
 
-    // ==========================================
-    // OPEN TEXT EDITOR
-    // ==========================================
-
+    /*
+     * TEXT
+     */
     const openTextEditor = (event) => {
         if (
             tool !== "text" ||
@@ -525,7 +799,8 @@ function Whiteboard({ roomId, userName }) {
             return;
         }
 
-        const point = getPosition(event);
+        const point =
+            getPosition(event);
 
         setTextEditor({
             ...point,
@@ -533,21 +808,23 @@ function Whiteboard({ roomId, userName }) {
         });
     };
 
-    // ==========================================
-    // COMMIT TEXT
-    // ==========================================
-
     const commitText = () => {
-        if (!textEditor?.value.trim()) {
+        if (
+            !textEditor?.value.trim()
+        ) {
             setTextEditor(null);
             return;
         }
 
+        saveHistory();
+
         const item = {
+            id: createId(),
             type: "text",
             color,
             width: textSize,
-            text: textEditor.value.trim(),
+            text:
+                textEditor.value.trim(),
             points: [
                 {
                     x: textEditor.x,
@@ -568,293 +845,610 @@ function Whiteboard({ roomId, userName }) {
         redraw();
     };
 
-    // ==========================================
-    // CLEAR BOARD
-    // ==========================================
+    /*
+     * COPY ROOM LINK
+     */
+    const copyRoomLink = async () => {
+        const link =
+            `${window.location.origin}/room/${roomId}`;
 
-    const clearBoard = () => {
-        strokesRef.current = [];
+        try {
+            await navigator.clipboard.writeText(
+                link
+            );
 
-        currentItemRef.current = null;
+            setCopied(true);
 
-        redraw();
-
-        publish({
-            type: "whiteboard-clear",
-        });
+            setTimeout(() => {
+                setCopied(false);
+            }, 1800);
+        } catch {
+            window.prompt(
+                "Copy this room link:",
+                link
+            );
+        }
     };
 
-    // ==========================================
-    // CURSOR LEAVE
-    // ==========================================
+    const remoteCount =
+        Object.keys(remoteCursors).length;
 
-    const handlePointerLeave = () => {
-        publish({
-            type: "cursor-leave",
-        });
-    };
-
-    // ==========================================
-    // UI
-    // ==========================================
+    const displayName =
+        userName ||
+        localStorage.getItem(
+            "syncspace_name"
+        ) ||
+        "Guest";
 
     return (
-        <div className="whiteboard-container">
+        <div className="syncspace">
+            {/* =====================================
+                TOP BAR
+            ====================================== */}
 
-            {/* ====================================
-                WHITEBOARD
-            ==================================== */}
+            <header className="topbar">
+                <div className="brand">
+                    <div className="brand-mark">
+                        S
+                    </div>
 
-            <div className="whiteboard-panel whiteboard-panel-canvas">
+                    <div className="brand-copy">
+                        <div className="brand-name">
+                            Sync<span>Space</span>
+                        </div>
 
-                {/* TOOLBAR */}
-
-                <div className="toolbar">
-
-                    <label>
-                        Color:
-
-                        <input
-                            type="color"
-                            value={color}
-                            onChange={(event) =>
-                                setColor(
-                                    event.target.value
-                                )
-                            }
-                        />
-                    </label>
-
-                    <label>
-                        Brush:
-
-                        <input
-                            type="range"
-                            min="1"
-                            max="30"
-                            value={lineWidth}
-                            onChange={(event) =>
-                                setLineWidth(
-                                    Number(
-                                        event.target.value
-                                    )
-                                )
-                            }
-                        />
-                    </label>
-
-                    <label>
-                        Text:
-
-                        <input
-                            type="range"
-                            min="12"
-                            max="64"
-                            value={textSize}
-                            onChange={(event) =>
-                                setTextSize(
-                                    Number(
-                                        event.target.value
-                                    )
-                                )
-                            }
-                        />
-                    </label>
-
-                    {/* DRAW */}
-
-                    <button
-                        className={
-                            tool === "draw"
-                                ? "active-tool"
-                                : ""
-                        }
-                        onClick={() =>
-                            setTool("draw")
-                        }
-                    >
-                        🖊 Draw
-                    </button>
-
-                    {/* RECTANGLE */}
-
-                    <button
-                        className={
-                            tool === "rectangle"
-                                ? "active-tool"
-                                : ""
-                        }
-                        onClick={() =>
-                            setTool("rectangle")
-                        }
-                    >
-                        ▭ Rectangle
-                    </button>
-
-                    {/* ERASER */}
-
-                    <button
-                        className={
-                            tool === "eraser"
-                                ? "active-tool"
-                                : ""
-                        }
-                        onClick={() =>
-                            setTool("eraser")
-                        }
-                    >
-                        🧹 Eraser
-                    </button>
-
-                    {/* TEXT */}
-
-                    <button
-                        className={
-                            tool === "text"
-                                ? "active-tool"
-                                : ""
-                        }
-                        onClick={() =>
-                            setTool("text")
-                        }
-                    >
-                        T Text
-                    </button>
-
-                    {/* CLEAR */}
-
-                    <button
-                        onClick={clearBoard}
-                    >
-                        🗑 Clear
-                    </button>
-
+                        <div className="brand-tagline">
+                            INTERVIEW WORKSPACE
+                        </div>
+                    </div>
                 </div>
 
-                {/* CANVAS */}
+                <div className="workspace-title">
+                    <span className="workspace-title-dot" />
+                    Collaborative Whiteboard
 
-                <div className="canvas-area">
+                    <span className="live-pill">
+                        <span />
+                        Live workspace
+                    </span>
+                </div>
 
-                    <canvas
-                        ref={canvasRef}
-                        className="whiteboard"
-                        onPointerDown={
-                            startDrawing
-                        }
-                        onPointerMove={
-                            draw
-                        }
-                        onPointerUp={
-                            stopDrawing
-                        }
-                        onPointerCancel={
-                            stopDrawing
-                        }
-                        onPointerLeave={
-                            handlePointerLeave
-                        }
+                <div className="topbar-right">
+                    <div className="online-users">
+                        <div className="avatar-stack">
+                            <span className="avatar primary">
+                                {displayName
+                                    .charAt(0)
+                                    .toUpperCase()}
+                            </span>
+
+                            {remoteCount > 0 &&
+                                Array.from({
+                                    length:
+                                        Math.min(
+                                            remoteCount,
+                                            3
+                                        ),
+                                }).map(
+                                    (_, index) => (
+                                        <span
+                                            className="avatar"
+                                            key={
+                                                index
+                                            }
+                                        >
+                                            {String.fromCharCode(
+                                                65 +
+                                                    index
+                                            )}
+                                        </span>
+                                    )
+                                )}
+                        </div>
+
+                        <span>
+                            {remoteCount + 1} online
+                        </span>
+                    </div>
+
+                    <button
+                        type="button"
+                        className="room-button"
                         onClick={
-                            openTextEditor
+                            copyRoomLink
                         }
-                    />
+                        title="Copy room link"
+                    >
+                        <span>
+                            ROOM
+                        </span>
 
-                    {/* ==================================
-                        REMOTE CURSORS
-                    ================================== */}
+                        {roomId ||
+                            "ROOM"}
+                    </button>
 
-                    {Object.values(
-                        remoteCursors
-                    ).map((cursor) => (
-                        <div
-                            key={cursor.userId}
-                            className="remote-cursor"
-                            style={{
-                                left: cursor.x,
-                                top: cursor.y,
-                                "--cursor-color":
-                                    cursor.color,
-                            }}
-                        >
-                            <div className="cursor-pointer">
-                                ◆
+                    <button
+                        type="button"
+                        className="share-button"
+                        onClick={
+                            copyRoomLink
+                        }
+                    >
+                        {copied
+                            ? "✓ Copied"
+                            : "↗ Share"}
+                    </button>
+                </div>
+            </header>
+
+            {/* =====================================
+                WORKSPACE
+            ====================================== */}
+
+            <main className="workspace">
+                {/* =================================
+                    TOOL PANEL
+                ================================== */}
+
+                <aside className="tool-panel">
+                    <div className="tool-panel-label">
+                        TOOLS
+                    </div>
+
+                    <div className="tool-list">
+                        {TOOLS.map((item) => (
+                            <button
+                                type="button"
+                                key={item.id}
+                                className={`tool-button ${
+                                    tool === item.id
+                                        ? "selected"
+                                        : ""
+                                }`}
+                                onClick={() =>
+                                    setTool(
+                                        item.id
+                                    )
+                                }
+                                title={`${item.label} (${item.key})`}
+                            >
+                                <span className="tool-icon">
+                                    {item.icon}
+                                </span>
+
+                                <span className="tool-label">
+                                    {item.label}
+                                </span>
+
+                                <span className="tool-key">
+                                    {item.key}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="tool-divider" />
+
+                    <button
+                        type="button"
+                        className="side-action"
+                        onClick={undo}
+                        disabled={
+                            strokesRef.current
+                                .length === 0
+                        }
+                        title="Undo (Ctrl + Z)"
+                    >
+                        ↶
+                    </button>
+
+                    <button
+                        type="button"
+                        className="side-action"
+                        onClick={redo}
+                        disabled={
+                            redoStackRef.current
+                                .length === 0
+                        }
+                        title="Redo (Ctrl + Shift + Z)"
+                    >
+                        ↷
+                    </button>
+
+                    <button
+                        type="button"
+                        className="side-action danger"
+                        onClick={clearBoard}
+                        title="Clear board"
+                    >
+                        ⌫
+                    </button>
+
+                    <div className="tool-spacer" />
+
+                    <button
+                        type="button"
+                        className="help-button"
+                        onClick={() =>
+                            setShowHelp(
+                                (previous) =>
+                                    !previous
+                            )
+                        }
+                        title="Keyboard shortcuts"
+                    >
+                        ?
+                    </button>
+                </aside>
+
+                {/* =================================
+                    CANVAS
+                ================================== */}
+
+                <section className="canvas-section">
+                    <div className="canvas-header">
+                        <div>
+                            <div className="canvas-kicker">
+                                SHARED CANVAS
                             </div>
 
-                            <div className="cursor-label">
-                                {cursor.userName}
+                            <div className="canvas-heading">
+                                Whiteboard
                             </div>
                         </div>
-                    ))}
 
-                    {/* ==================================
-                        TEXT INPUT
+                        <div className="canvas-actions">
+                            <span className="connection-status">
+                                <span />
+                                Connected
+                            </span>
+
+                            <span className="room-chip">
+                                #{roomId || "room"}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="canvas-area">
+                        <div className="canvas-wrapper">
+                            <div className="canvas-grid" />
+
+                            <div className="live-badge">
+                                <span className="live-dot" />
+                                Live canvas
+                            </div>
+
+                            <div className="canvas-hint">
+                                <strong>
+                                    {tool === "select"
+                                        ? "Select tool"
+                                        : `${tool.charAt(0).toUpperCase()}${tool.slice(1)} tool`}
+                                </strong>
+
+                                <span>
+                                    Draw and collaborate in
+                                    real time
+                                </span>
+                            </div>
+
+                            <canvas
+                                ref={canvasRef}
+                                className={`drawing-canvas cursor-${tool}`}
+                                onPointerDown={
+                                    startDrawing
+                                }
+                                onPointerMove={
+                                    draw
+                                }
+                                onPointerUp={
+                                    stopDrawing
+                                }
+                                onPointerCancel={
+                                    stopDrawing
+                                }
+                                onPointerLeave={() => {
+                                    publish({
+                                        type:
+                                            "cursor-leave",
+                                    });
+                                }}
+                                onClick={
+                                    openTextEditor
+                                }
+                            />
+
+                            {/* REMOTE CURSORS */}
+
+                            {Object.values(
+                                remoteCursors
+                            ).map(
+                                (cursor) => (
+                                    <div
+                                        key={
+                                            cursor.userId
+                                        }
+                                        className="remote-cursor"
+                                        style={{
+                                            left:
+                                                cursor.x,
+                                            top:
+                                                cursor.y,
+                                            "--cursor-color":
+                                                cursor.color,
+                                        }}
+                                    >
+                                        <div className="cursor-pointer">
+                                            ◆
+                                        </div>
+
+                                        <div className="cursor-label">
+                                            {
+                                                cursor.userName
+                                            }
+                                        </div>
+                                    </div>
+                                )
+                            )}
+
+                            {/* TEXT INPUT */}
+
+                            {textEditor && (
+                                <div
+                                    className="canvas-text-editor"
+                                    style={{
+                                        left:
+                                            textEditor.x,
+                                        top:
+                                            textEditor.y -
+                                            textSize,
+                                    }}
+                                >
+                                    <input
+                                        autoFocus
+                                        value={
+                                            textEditor.value
+                                        }
+                                        placeholder="Type your text..."
+                                        style={{
+                                            fontSize:
+                                                textSize,
+                                        }}
+                                        onPointerDown={(
+                                            event
+                                        ) =>
+                                            event.stopPropagation()
+                                        }
+                                        onChange={(
+                                            event
+                                        ) =>
+                                            setTextEditor(
+                                                {
+                                                    ...textEditor,
+                                                    value:
+                                                        event
+                                                            .target
+                                                            .value,
+                                                }
+                                            )
+                                        }
+                                        onBlur={
+                                            commitText
+                                        }
+                                        onKeyDown={(
+                                            event
+                                        ) => {
+                                            if (
+                                                event.key ===
+                                                "Enter"
+                                            ) {
+                                                commitText();
+                                            }
+
+                                            if (
+                                                event.key ===
+                                                "Escape"
+                                            ) {
+                                                setTextEditor(
+                                                    null
+                                                );
+                                            }
+                                        }}
+                                    />
+                                </div>
+                            )}
+
+                            {/* SHORTCUT HELP */}
+
+                            {showHelp && (
+                                <div className="shortcut-panel">
+                                    <div className="shortcut-header">
+                                        <div>
+                                            <span>
+                                                SHORTCUTS
+                                            </span>
+
+                                            <strong>
+                                                Keyboard controls
+                                            </strong>
+                                        </div>
+
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setShowHelp(
+                                                    false
+                                                )
+                                            }
+                                        >
+                                            ×
+                                        </button>
+                                    </div>
+
+                                    <div className="shortcut-grid">
+                                        {TOOLS.map(
+                                            (
+                                                item
+                                            ) => (
+                                                <div
+                                                    key={
+                                                        item.id
+                                                    }
+                                                >
+                                                    <kbd>
+                                                        {
+                                                            item.key
+                                                        }
+                                                    </kbd>
+
+                                                    <span>
+                                                        {
+                                                            item.label
+                                                        }
+                                                    </span>
+                                                </div>
+                                            )
+                                        )}
+
+                                        <div>
+                                            <kbd>
+                                                Ctrl Z
+                                            </kbd>
+
+                                            <span>
+                                                Undo
+                                            </span>
+                                        </div>
+
+                                        <div>
+                                            <kbd>
+                                                Ctrl ⇧ Z
+                                            </kbd>
+
+                                            <span>
+                                                Redo
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* =================================
+                        BOTTOM CONTROLS
                     ================================== */}
 
-                    {textEditor && (
-                        <input
-                            autoFocus
-                            className="canvas-text-editor"
-                            style={{
-                                left: textEditor.x,
-                                top:
-                                    textEditor.y -
-                                    textSize,
-                                fontSize: textSize,
-                            }}
-                            placeholder="Type here"
-                            value={
-                                textEditor.value
-                            }
-                            onPointerDown={(event) =>
-                                event.stopPropagation()
-                            }
-                            onChange={(event) =>
-                                setTextEditor({
-                                    ...textEditor,
-                                    value:
-                                        event.target
-                                            .value,
-                                })
-                            }
-                            onBlur={commitText}
-                            onKeyDown={(event) => {
-                                if (
-                                    event.key ===
-                                    "Enter"
-                                ) {
-                                    commitText();
+                    <footer className="bottom-bar">
+                        <div className="bottom-group">
+                            <span className="bottom-label">
+                                Color
+                            </span>
+
+                            <input
+                                className="color-picker"
+                                type="color"
+                                value={color}
+                                onChange={(event) =>
+                                    setColor(
+                                        event.target.value
+                                    )
                                 }
+                                title="Choose color"
+                            />
 
-                                if (
-                                    event.key ===
-                                    "Escape"
-                                ) {
-                                    setTextEditor(
-                                        null
-                                    );
+                            <span className="color-value">
+                                {color.toUpperCase()}
+                            </span>
+                        </div>
+
+                        <div className="bottom-separator" />
+
+                        <div className="bottom-group slider-group">
+                            <span className="bottom-label">
+                                Brush
+                            </span>
+
+                            <input
+                                type="range"
+                                min="1"
+                                max="30"
+                                value={lineWidth}
+                                onChange={(event) =>
+                                    setLineWidth(
+                                        Number(
+                                            event
+                                                .target
+                                                .value
+                                        )
+                                    )
                                 }
-                            }}
-                        />
-                    )}
+                            />
 
-                </div>
+                            <span className="slider-value">
+                                {lineWidth}px
+                            </span>
+                        </div>
 
-            </div>
+                        <div className="bottom-group slider-group">
+                            <span className="bottom-label">
+                                Text
+                            </span>
 
-            {/* ====================================
-                CODE EDITOR
-            ==================================== */}
+                            <input
+                                type="range"
+                                min="12"
+                                max="64"
+                                value={textSize}
+                                onChange={(event) =>
+                                    setTextSize(
+                                        Number(
+                                            event
+                                                .target
+                                                .value
+                                        )
+                                    )
+                                }
+                            />
 
-            <div className="whiteboard-panel whiteboard-panel-editor">
+                            <span className="slider-value">
+                                {textSize}px
+                            </span>
+                        </div>
 
-                <CodeEditor
-                    roomId={roomId}
-                />
+                        <div className="bottom-spacer" />
 
-            </div>
+                        <div className="board-info">
+                            <span className="board-info-dot" />
+                            Changes sync automatically
+                        </div>
 
+                        <button
+                            type="button"
+                            className="zoom-button"
+                            onClick={() =>
+                                setShowHelp(
+                                    (previous) =>
+                                        !previous
+                                )
+                            }
+                        >
+                            ?
+                        </button>
+                    </footer>
+                </section>
+
+                {/* =================================
+                    CODE EDITOR
+                ================================== */}
+
+                <section className="editor-section">
+                    <CodeEditor
+                        roomId={roomId}
+                    />
+                </section>
+            </main>
         </div>
     );
 }
 
 export default Whiteboard;
-
