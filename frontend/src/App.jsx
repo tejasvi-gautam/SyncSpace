@@ -1,31 +1,32 @@
-
 import { Routes, Route, Navigate } from "react-router-dom";
-
 import Home from "./pages/Home";
 import Whiteboard from "./components/Whiteboard";
+import "./App.css";
 
-export default function App() {
+function App() {
     return (
-        <Routes>
+        <div className="app">
+            <Routes>
+                {/* Home / Join Room */}
+                <Route
+                    path="/"
+                    element={<Home />}
+                />
 
-            {/* Home / Login-style landing page */}
-            <Route
-                path="/"
-                element={<Home />}
-            />
+                {/* Collaborative Whiteboard Room */}
+                <Route
+                    path="/room/:roomId"
+                    element={<Whiteboard />}
+                />
 
-            {/* Collaborative interview workspace */}
-            <Route
-                path="/room/:roomId"
-                element={<Whiteboard />}
-            />
-
-            {/* Unknown URL */}
-            <Route
-                path="*"
-                element={<Navigate to="/" replace />}
-            />
-
-        </Routes>
+                {/* Invalid URL */}
+                <Route
+                    path="*"
+                    element={<Navigate to="/" replace />}
+                />
+            </Routes>
+        </div>
     );
 }
+
+export default App;

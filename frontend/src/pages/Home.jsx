@@ -1,64 +1,64 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import Landing from "../components/Landing";
 
 function Home() {
-    const [username, setUsername] = useState("");
+    const [username, setUsername] = useState(
+        localStorage.getItem("syncspace_username") || ""
+    );
     const [roomId, setRoomId] = useState("");
 
     const navigate = useNavigate();
 
     const joinRoom = () => {
-        if (username.trim() === "") {
+        const cleanUsername = username.trim();
+        const cleanRoomId = roomId.trim().toUpperCase();
+
+        if (!cleanUsername) {
             alert("Please enter your name");
             return;
         }
 
-        if (roomId.trim() === "") {
+        if (!cleanRoomId) {
             alert("Please enter Room ID");
             return;
         }
 
-        localStorage.setItem("username", username);
+        localStorage.setItem("syncspace_username", cleanUsername);
+        localStorage.setItem("syncspace_room", cleanRoomId);
 
-        navigate(`/room/${roomId}`);
+        navigate(`/room/${cleanRoomId}`);
+    };
+
+    const createRoom = () => {
+        const cleanUsername = username.trim();
+
+        if (!cleanUsername) {
+            alert("Please enter your name");
+            return;
+        }
+
+        const newRoomId = Math.random()
+            .toString(36)
+            .substring(2, 8)
+            .toUpperCase();
+
+        localStorage.setItem("syncspace_username", cleanUsername);
+        localStorage.setItem("syncspace_room", newRoomId);
+
+        navigate(`/room/${newRoomId}`);
     };
 
     return (
-        <div className="home-page">
-
-            <div className="home-card">
-
-                <h1>SyncSpace</h1>
-
-                <p>
-                    Real-Time Collaborative Whiteboard
-                </p>
-
-                <label>Your Name</label>
-
-                <input
-                    type="text"
-                    placeholder="Enter your name"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                />
-
-                <label>Room ID</label>
-
-                <input
-                    type="text"
-                    placeholder="Enter room ID"
-                    value={roomId}
-                    onChange={(e) => setRoomId(e.target.value)}
-                />
-
-                <button onClick={joinRoom}>
-                    Join Room
-                </button>
-
-            </div>
-
-        </div>
+        <Landing
+            name={username}
+            setName={setUsername}
+            roomId={roomId}
+            setRoomId={setRoomId}
+            handleJoin={joinRoom}
+            handleCreate={createRoom}
+            navigate={navigate}
+        />
     );
 }
 
