@@ -1,3 +1,4 @@
+const roomUsers = new Map();
 export const initializeSocket = (io) => {
     io.on("connection", (socket) => {
         console.log("Socket connected:", socket.id);
@@ -8,7 +9,14 @@ export const initializeSocket = (io) => {
 
         socket.on("join-room", (roomId) => {
             if (!roomId) return;
-
+            if(!roomUsers.has(roomId)) {
+                roomUsers.set(roomId, new Set());
+            }
+            roomUsers.get(roomId).add(socket.id,{
+                SocketId: socket.id,
+                userId: socket.userId,
+                name:socket.user.name
+            });
             socket.join(roomId);
 
             console.log(
