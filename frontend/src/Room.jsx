@@ -1,23 +1,28 @@
+import { useMemo } from "react";
 import { useParams } from "react-router-dom";
 import Whiteboard from "./components/Whiteboard";
 
 function Room() {
-    const { roomId } = useParams();
+    const { roomId } =
+        useParams();
+
+    const userName = useMemo(() => {
+        return (
+            localStorage.getItem(
+                "syncspace_name"
+            ) ||
+            localStorage.getItem(
+                "syncspace_user_name"
+            ) ||
+            "Guest"
+        );
+    }, []);
 
     return (
-        <div className="room-page">
-            <header className="room-header">
-                <h1>SyncSpace</h1>
-
-                <div className="room-info">
-                    Room: <strong>{roomId}</strong>
-                </div>
-            </header>
-
-            <main className="room-content">
-                <Whiteboard roomId={roomId} />
-            </main>
-        </div>
+        <Whiteboard
+            roomId={roomId}
+            userName={userName}
+        />
     );
 }
 
