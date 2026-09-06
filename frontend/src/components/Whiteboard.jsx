@@ -10,6 +10,11 @@ function Whiteboard({ roomId, userName }) {
     const drawingRef = useRef(false);
     const currentItemRef = useRef(null);
     const strokesRef = useRef([]);
+    const viewportRef = useRef({
+        x: 0,
+        y: 0,
+        zoom: 1,
+    });
 
     // ==========================================
     // ZUSTAND STATE
@@ -91,6 +96,29 @@ function Whiteboard({ roomId, userName }) {
             cursorColor: cursorColorRef.current,
             ...message,
         });
+    };
+
+    // ==========================================
+    // VIEWPORT HELPERS
+    // ==========================================
+
+    const toScreenPoint = (point) => {
+        const { x, y } = viewportRef.current;
+        const { zoom } = viewportRef.current;
+
+        return {
+            x: point.x * zoom + x,
+            y: point.y * zoom + y,
+        };
+    };
+
+    const fromScreenPoint = (point) => {
+        const { x, y, zoom } = viewportRef.current;
+
+        return {
+            x: (point.x - x) / zoom,
+            y: (point.y - y) / zoom,
+        };
     };
 
     // ==========================================
@@ -204,12 +232,23 @@ function Whiteboard({ roomId, userName }) {
             canvas.height
         );
 
+        context.save();
+        context.translate(
+            viewportRef.current.x,
+            viewportRef.current.y
+        );
+        context.scale(
+            viewportRef.current.zoom,
+            viewportRef.current.zoom
+        );
+
         strokesRef.current.forEach(drawItem);
 
-        // Draw item currently being created
         if (currentItemRef.current) {
             drawItem(currentItemRef.current);
         }
+
+        context.restore();
     };
 
     // ==========================================
@@ -224,15 +263,8 @@ function Whiteboard({ roomId, userName }) {
         const resizeCanvas = () => {
             const rect = canvas.getBoundingClientRect();
 
-            const previousWidth = canvas.width;
-            const previousHeight = canvas.height;
-
             canvas.width = rect.width;
             canvas.height = rect.height;
-
-            // Avoid unused-variable warnings
-            void previousWidth;
-            void previousHeight;
 
             const context = canvas.getContext("2d");
 
@@ -377,6 +409,11 @@ function Whiteboard({ roomId, userName }) {
         };
     };
 
+    const getWorldPosition = (event) => {
+        const point = getPosition(event);
+        return fromScreenPoint(point);
+    };
+
     // ==========================================
     // SEND CURSOR POSITION
     // ==========================================
@@ -384,7 +421,7 @@ function Whiteboard({ roomId, userName }) {
     const sendCursorPosition = (event) => {
         if (!roomId) return;
 
-        const point = getPosition(event);
+        const point = getWorldPosition(event);
 
         publish({
             type: "cursor-move",
@@ -404,7 +441,7 @@ function Whiteboard({ roomId, userName }) {
             event.pointerId
         );
 
-        const point = getPosition(event);
+        const point = getWorldPosition(event);
 
         drawingRef.current = true;
 
@@ -455,7 +492,7 @@ function Whiteboard({ roomId, userName }) {
             return;
         }
 
-        const point = getPosition(event);
+        const point = getWorldPosition(event);
 
         const item = currentItemRef.current;
 
@@ -525,7 +562,7 @@ function Whiteboard({ roomId, userName }) {
             return;
         }
 
-        const point = getPosition(event);
+        const point = getWorldPosition(event);
 
         setTextEditor({
             ...point,
@@ -592,6 +629,35 @@ function Whiteboard({ roomId, userName }) {
         publish({
             type: "cursor-leave",
         });
+    };
+
+    const handleWheel = (event) => {
+        event.preventDefault();
+
+        const canvas = canvasRef.current;
+
+        if (!canvas) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const pointerX = event.clientX - rect.left;
+        const pointerY = event.clientY - rect.top;
+
+        const currentZoom = viewportRef.current.zoom;
+        const nextZoom = Math.min(
+            2.5,
+            Math.max(0.4, currentZoom + (event.deltaY > 0 ? -0.1 : 0.1))
+        );
+
+        const worldX =
+            (pointerX - viewportRef.current.x) / currentZoom;
+        const worldY =
+            (pointerY - viewportRef.current.y) / currentZoom;
+
+        viewportRef.current.zoom = nextZoom;
+        viewportRef.current.x = pointerX - worldX * nextZoom;
+        viewportRef.current.y = pointerY - worldY * nextZoom;
+
+        redraw();
     };
 
     // ==========================================
@@ -753,6 +819,7 @@ function Whiteboard({ roomId, userName }) {
                         onPointerLeave={
                             handlePointerLeave
                         }
+                        onWheel={handleWheel}
                         onClick={
                             openTextEditor
                         }
@@ -764,26 +831,30 @@ function Whiteboard({ roomId, userName }) {
 
                     {Object.values(
                         remoteCursors
-                    ).map((cursor) => (
-                        <div
-                            key={cursor.userId}
-                            className="remote-cursor"
-                            style={{
-                                left: cursor.x,
-                                top: cursor.y,
-                                "--cursor-color":
-                                    cursor.color,
-                            }}
-                        >
+                    ).map((cursor) => {
+                        const remotePosition = toScreenPoint(cursor);
+
+                        return (
+                            <div
+                                key={cursor.userId}
+                                className="remote-cursor"
+                                style={{
+                                    left: remotePosition.x,
+                                    top: remotePosition.y,
+                                    "--cursor-color":
+                                        cursor.color,
+                                }}
+                            >
                             <div className="cursor-pointer">
                                 ◆
                             </div>
 
-                            <div className="cursor-label">
-                                {cursor.userName}
+                                <div className="cursor-label">
+                                    {cursor.userName}
+                                </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
 
                     {/* ==================================
                         TEXT INPUT
@@ -794,11 +865,20 @@ function Whiteboard({ roomId, userName }) {
                             autoFocus
                             className="canvas-text-editor"
                             style={{
-                                left: textEditor.x,
+                                left: toScreenPoint({
+                                    x: textEditor.x,
+                                    y: textEditor.y,
+                                }).x,
                                 top:
-                                    textEditor.y -
-                                    textSize,
-                                fontSize: textSize,
+                                    toScreenPoint({
+                                        x: textEditor.x,
+                                        y: textEditor.y,
+                                    }).y -
+                                    textSize *
+                                        viewportRef.current.zoom,
+                                fontSize:
+                                    textSize *
+                                    viewportRef.current.zoom,
                             }}
                             placeholder="Type here"
                             value={
