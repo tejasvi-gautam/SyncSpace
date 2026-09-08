@@ -2,26 +2,32 @@ import { create } from "zustand";
 
 export const useSyncSpaceStore = create((set) => ({
     // =========================
-    // WHITEBOARD STATE
+    // TOOL
     // =========================
 
-    selectedTool: "draw",
-    selectedColor: "#000000",
+    selectedTool: "select",
+
+    selectedColor: "#111827",
+
     brushSize: 3,
 
+    textSize: 24,
+
     // =========================
-    // ROOM STATE
+    // CANVAS
+    // =========================
+
+    zoom: 1,
+
+    showGrid: true,
+
+    // =========================
+    // ROOM
     // =========================
 
     roomId: "",
+
     roomName: "My Whiteboard",
-
-    // =========================
-    // CODE EDITOR STATE
-    // =========================
-
-    code: "",
-    language: "javascript",
 
     // =========================
     // COLLABORATORS
@@ -30,7 +36,15 @@ export const useSyncSpaceStore = create((set) => ({
     collaborators: [],
 
     // =========================
-    // WHITEBOARD ACTIONS
+    // CODE
+    // =========================
+
+    code: "",
+
+    language: "javascript",
+
+    // =========================
+    // TOOL ACTIONS
     // =========================
 
     setSelectedTool: (tool) =>
@@ -48,8 +62,47 @@ export const useSyncSpaceStore = create((set) => ({
             brushSize: size,
         }),
 
+    setTextSize: (size) =>
+        set({
+            textSize: size,
+        }),
+
     // =========================
-    // ROOM ACTIONS
+    // ZOOM
+    // =========================
+
+    zoomIn: () =>
+        set((state) => ({
+            zoom: Math.min(
+                2,
+                Number((state.zoom + 0.1).toFixed(1))
+            ),
+        })),
+
+    zoomOut: () =>
+        set((state) => ({
+            zoom: Math.max(
+                0.5,
+                Number((state.zoom - 0.1).toFixed(1))
+            ),
+        })),
+
+    resetZoom: () =>
+        set({
+            zoom: 1,
+        }),
+
+    // =========================
+    // GRID
+    // =========================
+
+    toggleGrid: () =>
+        set((state) => ({
+            showGrid: !state.showGrid,
+        })),
+
+    // =========================
+    // ROOM
     // =========================
 
     setRoomId: (roomId) =>
@@ -63,21 +116,7 @@ export const useSyncSpaceStore = create((set) => ({
         }),
 
     // =========================
-    // CODE EDITOR ACTIONS
-    // =========================
-
-    setCode: (code) =>
-        set({
-            code,
-        }),
-
-    setLanguage: (language) =>
-        set({
-            language,
-        }),
-
-    // =========================
-    // COLLABORATOR ACTIONS
+    // COLLABORATORS
     // =========================
 
     setCollaborators: (collaborators) =>
@@ -95,8 +134,23 @@ export const useSyncSpaceStore = create((set) => ({
 
     removeCollaborator: (id) =>
         set((state) => ({
-            collaborators: state.collaborators.filter(
-                (user) => user.id !== id
-            ),
+            collaborators:
+                state.collaborators.filter(
+                    (user) => user.id !== id
+                ),
         })),
+
+    // =========================
+    // CODE
+    // =========================
+
+    setCode: (code) =>
+        set({
+            code,
+        }),
+
+    setLanguage: (language) =>
+        set({
+            language,
+        }),
 }));

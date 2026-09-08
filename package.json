@@ -1,5 +1,16 @@
 {
+  "name": "syncspace",
+  "private": true,
+  "scripts": {
+    "dev": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "preview": "cd frontend && npm run preview",
+    "postinstall": "cd frontend && npm install"
+  },
   "dependencies": {
+    "react-router-dom": "^7.18.2",
+    "socket.io-client": "^4.8.3",
+    "yjs": "^13.6.32",
     "zustand": "^5.0.15"
   }
 }

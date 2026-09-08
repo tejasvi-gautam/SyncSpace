@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SyncSpace | Think together. Build together.</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root { --charcoal:#1C1E24; --charcoal-soft:#23262E; --charcoal-line:#31343D; --paper:#F6F4EF; --paper-line:#E4E0D5; --ink:#1C1E24; --off-white:#F2F1ED; --off-white-dim:#B9BAC0; --amber:#E8873A; --amber-light:#F3A761; --blue:#4C8DFF; --green:#3FB950; --violet:#8C7CF0; --teal:#3FBF9F; --red:#E5605A; --mono:'IBM Plex Mono', monospace; --sans:'IBM Plex Sans', sans-serif; --serif:'Fraunces', Georgia, serif; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; background:var(--charcoal); color:var(--off-white); font-family:var(--sans); }
+    button, input, select, textarea { font:inherit; }
+    button { cursor:pointer; }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline:3px solid rgba(232,135,58,.55); outline-offset:3px; }
+    .hidden { display:none !important; }
+    .landing { min-height:100vh; overflow:hidden; }
+    .site-nav { display:flex; align-items:center; justify-content:space-between; max-width:1220px; margin:auto; padding:26px 28px; }
+    .brand { display:flex; align-items:center; gap:10px; color:var(--off-white); text-decoration:none; }
+    .brand-mark { width:32px; height:32px; border-radius:9px; display:grid; place-items:center; color:#fff; font-family:var(--serif); font-size:22px; font-style:italic; font-weight:600; background:linear-gradient(135deg, #f4a35d, #c7672b); box-shadow:0 5px 20px rgba(232,135,58,.22); }
+    .brand-word { font-size:16px; font-weight:700; letter-spacing:-.02em; }
+    .brand-meta { display:block; color:var(--off-white-dim); font:500 8px var(--mono); letter-spacing:.09em; margin-top:2px; }
+    .nav-links { display:flex; gap:31px; margin-left:auto; margin-right:32px; }
+    .nav-links a { color:var(--off-white-dim); text-decoration:none; font-size:13px; }
+    .nav-links a:hover { color:var(--off-white); }
+    .nav-actions { display:flex; align-items:center; gap:16px; }
+    .ghost-btn, .amber-btn, .outline-btn { border-radius:6px; padding:10px 15px; border:1px solid transparent; font-size:13px; font-weight:600; }
+    .ghost-btn { background:transparent; color:var(--off-white); border-color:var(--charcoal-line); }
+    .amber-btn { background:var(--amber); color:#fff; box-shadow:0 8px 20px rgba(232,135,58,.18); }
+    .amber-btn:hover { background:var(--amber-light); }
+    .outline-btn { color:var(--off-white); background:transparent; border-color:var(--charcoal-line); }
+    .hero { max-width:1220px; margin:0 auto; padding:68px 28px 108px; display:grid; grid-template-columns:minmax(0, 1fr) minmax(420px, .9fr); align-items:center; gap:72px; position:relative; }
+    .hero:before { content:""; position:absolute; inset:0 -20vw; z-index:-1; opacity:.28; background-image:radial-gradient(rgba(242,241,237,.3) 1px, transparent 1px); background-size:23px 23px; mask-image:linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent); }
+    .eyebrow { display:inline-flex; align-items:center; gap:8px; padding:7px 10px; border:1px solid var(--charcoal-line); border-radius:999px; color:var(--off-white-dim); font:500 11px var(--mono); }
+    .live-dot, .status-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 0 4px rgba(63,185,80,.11); animation:pulse 2s infinite; }
+    @keyframes pulse { 50% { box-shadow:0 0 0 7px rgba(63,185,80,0); } }
+    h1, h2, h3, p { margin-top:0; }
+    .hero h1 { max-width:650px; margin:21px 0 20px; font:500 clamp(48px, 6.2vw, 82px)/.98 var(--serif); letter-spacing:-.055em; }
+    .hero h1 em { color:var(--amber); font-style:italic; }
+    .hero-copy { color:var(--off-white-dim); font-size:17px; line-height:1.65; max-width:510px; }
+    .hero-ctas { display:flex; gap:11px; margin:30px 0 48px; }
+    .hero-ctas button { padding:13px 17px; }
+    .stats { display:flex; gap:34px; }
+    .stat { border-left:1px solid var(--charcoal-line); padding-left:15px; }
+    .stat strong { display:block; color:var(--off-white); font:500 27px var(--serif); }
+    .stat span { display:block; margin-top:4px; color:var(--off-white-dim); font:10px var(--mono); }
+    .browser-wrap { transform:rotate(2.5deg); filter:drop-shadow(0 28px 28px rgba(0,0,0,.28)); }
+    .browser { border:1px solid #41444d; border-radius:10px; background:#30333a; overflow:hidden; }
+    .browser-bar { height:38px; display:flex; align-items:center; gap:6px; padding:0 14px; border-bottom:1px solid #41444d; }
+    .browser-bar i { width:7px; height:7px; border-radius:50%; background:#5b5e65; }
+    .browser-url { margin-left:10px; width:145px; height:8px; border-radius:20px; background:#454850; }
+    .mini-room { height:350px; position:relative; padding:20px; background-color:var(--paper); background-image:radial-gradient(var(--paper-line) 1px, transparent 1px); background-size:22px 22px; }
+    .mini-room-top { height:12px; width:72%; background:#dedbd2; border-radius:2px; margin-bottom:35px; }
+    .mini-node { position:absolute; padding:13px 15px; min-width:115px; border:2px solid; border-radius:6px; background:rgba(255,255,255,.72); color:var(--ink); font:600 11px var(--mono); box-shadow:0 4px 8px rgba(28,30,36,.07); }
+    .mini-node small { display:block; margin-top:5px; color:#888680; font:10px var(--sans); }
+    .node-a { top:95px; left:32px; border-color:var(--amber); } .node-b { top:190px; left:176px; border-color:var(--blue); } .node-c { top:90px; right:27px; border-color:var(--teal); }
+    .mini-arrow { position:absolute; height:2px; width:70px; background:#989898; transform:rotate(32deg); left:126px; top:154px; } .mini-arrow:after { content:""; position:absolute; right:-1px; top:-4px; border-left:8px solid #989898; border-top:5px solid transparent; border-bottom:5px solid transparent; }
+    .mini-arrow.two { transform:rotate(-31deg); left:270px; top:150px; width:66px; }
+    .cursor-tag { position:absolute; padding:5px 8px; color:#fff; border-radius:4px; font:10px var(--mono); animation:float 4s ease-in-out infinite; z-index:2; }
+    .cursor-tag:before { content:""; position:absolute; bottom:-6px; left:7px; border-top:7px solid currentColor; border-right:5px solid transparent; }
+    .cursor-tag.alex { background:var(--violet); color:var(--violet); left:102px; bottom:32px; animation-delay:-1s; } .cursor-tag.alex span, .cursor-tag.maya span { color:#fff; } .cursor-tag.maya { background:var(--red); color:var(--red); right:34px; top:42px; animation-delay:-2.5s; }
+    @keyframes float { 50% { transform:translate(12px, -15px); } }
+    .section { max-width:1220px; margin:0 auto; padding:88px 28px; }
+    .section-kicker { color:var(--amber); font:600 11px var(--mono); letter-spacing:.1em; text-transform:uppercase; }
+    .section h2 { margin:12px 0 42px; font:500 43px/1.05 var(--serif); letter-spacing:-.04em; }
+    .feature-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; }
+    .feature { border:1px solid var(--charcoal-line); border-radius:10px; padding:27px; background:rgba(35,38,46,.46); min-height:230px; transition:transform .2s, border-color .2s; }
+    .feature:hover { transform:translateY(-4px); border-color:#5b5e68; }
+    .feature-icon { width:40px; height:40px; color:var(--amber); margin-bottom:28px; }
+    .feature h3 { font:500 23px var(--serif); margin-bottom:10px; }
+    .feature p { color:var(--off-white-dim); font-size:14px; line-height:1.6; margin:0; }
+    .deep-dive { background:var(--paper); color:var(--ink); max-width:none; padding:92px max(28px, calc((100% - 1164px)/2)); }
+    .deep-dive .section-kicker { color:#b56327; }
+    .deep-dive h2 { max-width:550px; }
+    .product-frame { border:1px solid #cfcbc0; border-radius:10px; box-shadow:0 16px 35px rgba(28,30,36,.12); overflow:hidden; background:#fff; }
+    .frame-top { height:48px; border-bottom:1px solid #ddd9cf; display:flex; align-items:center; justify-content:space-between; padding:0 18px; font:11px var(--mono); }
+    .frame-top .connected { color:#298b3d; display:flex; align-items:center; gap:6px; }
+    .frame-body { display:grid; grid-template-columns:43px 1fr 310px; height:315px; }
+    .frame-rail { background:#202228; display:flex; flex-direction:column; align-items:center; padding-top:14px; gap:13px; }
+    .frame-rail span { color:#a8aab0; font-size:13px; }
+    .frame-canvas { position:relative; background-color:var(--paper); background-image:radial-gradient(#d7d3c8 1px, transparent 1px); background-size:20px 20px; overflow:hidden; }
+    .frame-canvas:before, .frame-canvas:after { content:""; position:absolute; border:2px solid; border-radius:5px; width:100px; height:42px; display:grid; place-items:center; font:11px var(--mono); }
+    .frame-canvas:before { content:"Clarify"; left:12%; top:22%; border-color:var(--amber); } .frame-canvas:after { content:"Implement"; right:10%; top:58%; border-color:var(--blue); }
+    .frame-lines { position:absolute; left:28%; top:38%; width:45%; border-top:2px solid #8e8e88; transform:rotate(26deg); }
+    .frame-code { background:#181a20; color:#d7dae4; padding:19px 17px; font:11px/1.75 var(--mono); overflow:hidden; }
+    .frame-code .keyword { color:#c792ea; } .frame-code .function { color:#82aaff; } .frame-code .string { color:#c3e88d; } .frame-code .comment { color:#6f788b; }
+    .join-wrap { background:#202228; padding:92px 28px; }
+    .join-card { max-width:1164px; margin:auto; border:1px solid var(--charcoal-line); border-radius:18px; display:grid; grid-template-columns:1fr 1fr; overflow:hidden; }
+    .join-pitch { padding:52px; background:linear-gradient(135deg,#282b33,#23262e); }
+    .join-pitch h2 { margin:15px 0 18px; font:500 44px/1.02 var(--serif); letter-spacing:-.04em; }
+    .join-pitch p { color:var(--off-white-dim); line-height:1.6; max-width:400px; }
+    .perks { padding:0; margin:35px 0 0; list-style:none; color:var(--off-white-dim); font-size:13px; line-height:2.5; }
+    .perks li:before { content:"✓"; color:var(--amber); margin-right:10px; font-weight:700; }
+    .join-form { padding:52px; background:var(--charcoal-soft); }
+    label { display:block; color:var(--off-white-dim); font:11px var(--mono); margin-bottom:8px; }
+    input, select, textarea { width:100%; color:var(--off-white); border:1px solid var(--charcoal-line); border-radius:6px; background:#1d2026; padding:12px 13px; }
+    input::placeholder { color:#777a82; }
+    .field { margin-bottom:19px; }
+    .role-toggle { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+    .role-toggle button { border:1px solid var(--charcoal-line); color:var(--off-white-dim); background:#1d2026; padding:11px; border-radius:6px; }
+    .role-toggle button.selected { border-color:var(--amber); color:#fff; background:rgba(232,135,58,.1); }
+    .join-form .amber-btn { width:100%; margin-top:3px; padding:13px; }
+    .divider { display:flex; align-items:center; gap:11px; color:#777a82; font:10px var(--mono); margin:20px 0; } .divider:before,.divider:after { content:""; height:1px; background:var(--charcoal-line); flex:1; }
+    .create-room { width:100%; color:var(--off-white); background:transparent; border:1px solid var(--charcoal-line); padding:12px; border-radius:6px; }
+    footer { max-width:1220px; margin:auto; padding:27px 28px 34px; display:flex; justify-content:space-between; color:#797b83; font:10px var(--mono); }
+    .room { height:100vh; min-height:500px; display:flex; flex-direction:column; background:var(--charcoal); overflow:hidden; }
+    .room-top { flex:0 0 58px; display:flex; align-items:center; gap:22px; padding:0 18px; border-bottom:1px solid var(--charcoal-line); background:#202228; }
+    .room-title { color:var(--off-white-dim); font:500 11px var(--mono); padding-left:18px; border-left:1px solid var(--charcoal-line); }
+    .room-status { display:flex; align-items:center; gap:7px; color:#81da8b; font:10px var(--mono); }
+    .room-users { display:flex; margin-left:auto; }
+    .avatar { width:29px; height:29px; margin-left:-7px; border:2px solid #202228; border-radius:50%; display:grid; place-items:center; color:#fff; font:600 10px var(--mono); position:relative; }
+    .avatar:first-child { margin-left:0; } .avatar:hover:after { content:attr(data-name); position:absolute; top:36px; right:0; padding:6px 8px; z-index:20; border:1px solid var(--charcoal-line); background:#16181d; color:#fff; white-space:nowrap; font:10px var(--mono); border-radius:4px; }
+    .invite-btn, .leave-btn { padding:8px 11px; border-radius:5px; font:10px var(--mono); }
+    .invite-btn { border:1px solid var(--charcoal-line); color:var(--off-white); background:transparent; } .leave-btn { border:0; background:transparent; color:var(--off-white-dim); }
+    .room-main { min-height:0; flex:1; display:flex; }
+    .tool-rail { flex:0 0 54px; background:#202228; border-right:1px solid var(--charcoal-line); display:flex; align-items:center; flex-direction:column; padding:13px 0; gap:7px; }
+    .tool { width:34px; height:32px; display:grid; place-items:center; border:1px solid transparent; border-radius:5px; color:#aeb0b8; background:transparent; font:16px var(--sans); }
+    .tool:hover, .tool.active { color:#fff; background:rgba(232,135,58,.16); border-color:rgba(232,135,58,.55); } .tool-divider { width:27px; height:1px; background:var(--charcoal-line); margin:6px 0; }
+    .canvas-pane { min-width:280px; flex:1; position:relative; overflow:hidden; background:var(--paper); }
+    #board { display:block; width:100%; height:100%; touch-action:none; cursor:crosshair; }
+    .board-hint { position:absolute; left:50%; bottom:18px; transform:translateX(-50%); padding:7px 10px; border:1px solid #d4d0c5; border-radius:4px; background:rgba(246,244,239,.9); color:#717067; font:10px var(--mono); transition:opacity .5s; pointer-events:none; white-space:nowrap; }
+    .zoom-controls { position:absolute; left:16px; bottom:15px; display:flex; border:1px solid #d4d0c5; border-radius:5px; overflow:hidden; background:rgba(246,244,239,.95); }
+    .zoom-controls button { width:31px; height:29px; color:var(--ink); border:0; border-right:1px solid #d4d0c5; background:transparent; } .zoom-controls button:last-child { border:0; font-size:11px; }
+    .remote-cursor { position:absolute; pointer-events:none; z-index:2; transition:left 1.8s ease, top 1.8s ease; }
+    .remote-cursor svg { display:block; filter:drop-shadow(0 2px 2px rgba(0,0,0,.12)); } .remote-cursor span { display:block; margin-left:13px; margin-top:-2px; padding:3px 5px; border-radius:3px; color:#fff; font:9px var(--mono); }
+    .resizer { flex:0 0 5px; background:var(--charcoal-line); cursor:col-resize; position:relative; z-index:4; } .resizer:hover { background:var(--amber); }
+    .code-pane { flex:0 0 38%; min-width:260px; display:flex; flex-direction:column; background:#181a20; }
+    .code-head { flex:0 0 48px; display:flex; align-items:center; justify-content:space-between; padding:0 15px; border-bottom:1px solid #2b2e37; }
+    .code-label { color:var(--off-white); font:600 11px var(--mono); } .code-head select { width:auto; padding:7px 25px 7px 8px; border-color:#343741; font:10px var(--mono); }
+    .editor { min-height:0; flex:1; display:flex; overflow:hidden; }
+    .line-numbers { flex:0 0 43px; padding:16px 10px 16px 0; text-align:right; color:#555b69; background:#181a20; font:12px/1.7 var(--mono); user-select:none; overflow:hidden; }
+    #codeInput { flex:1; resize:none; border:0; border-radius:0; padding:16px 14px; outline:0; background:#181a20; color:#d7dae4; font:12px/1.7 var(--mono); tab-size:2; white-space:pre; overflow:auto; }
+    #codeInput:focus-visible { outline:0; }
+    .room-toast { position:fixed; left:50%; top:78px; transform:translateX(-50%); color:#fff; background:#343840; border:1px solid #4a4e59; border-radius:5px; padding:9px 13px; font:11px var(--mono); opacity:0; pointer-events:none; transition:opacity .2s; z-index:30; } .room-toast.show { opacity:1; }
+    @media (max-width:800px) { .nav-links { display:none; } .hero { grid-template-columns:1fr; gap:52px; padding-top:38px; } .browser-wrap { max-width:540px; width:100%; margin:auto; } .feature-grid { grid-template-columns:1fr; } .feature { min-height:auto; } .join-card { grid-template-columns:1fr; } .join-pitch, .join-form { padding:34px 27px; } .frame-body { grid-template-columns:36px 1fr; } .frame-code { display:none; } }
+    @media (max-width:600px) { .site-nav { padding:18px 17px; } .nav-actions .ghost-btn { display:none; } .hero, .section { padding-left:18px; padding-right:18px; } .hero h1 { font-size:52px; } .stats { gap:15px; flex-wrap:wrap; } .stat strong { font-size:24px; } .deep-dive { padding-left:18px; padding-right:18px; } .join-wrap { padding:62px 18px; } footer { padding-left:18px; padding-right:18px; gap:15px; flex-direction:column; } .room-top { gap:10px; padding:0 10px; } .room-title { display:none; } .room-top .brand-word, .room-top .brand-meta { display:none; } .room-users { margin-left:auto; } .invite-btn { display:none; } .code-pane { min-width:220px; } .tool-rail { flex-basis:48px; } .tool { width:31px; } }
+  </style>
+</head>
+<body>
+  <main id="landing" class="landing">
+    <nav class="site-nav" aria-label="Main navigation">
+      <a class="brand" href="#top"><span class="brand-mark">S</span><span><span class="brand-word">SyncSpace</span><span class="brand-meta">COLLABORATE · BUILD · INTERVIEW</span></span></a>
+      <div class="nav-links"><a href="#features">Features</a><a href="#product">The workspace</a><a href="#join">Join a room</a></div>
+      <div class="nav-actions"><button class="ghost-btn" id="signInBtn">Sign in</button><button class="amber-btn" id="navTryBtn">Try it free</button></div>
+    </nav>
+    <section class="hero" id="top">
+      <div>
+        <span class="eyebrow"><i class="live-dot"></i> Live · workspace online</span>
+        <h1>Think together. Build <em>together.</em></h1>
+        <p class="hero-copy">A focused, low-latency room for technical interviews. Sketch the idea, shape the solution, and write the code without losing the thread.</p>
+        <div class="hero-ctas"><button class="amber-btn" id="startRoomBtn">Start a room&nbsp; →</button><button class="outline-btn" id="seeLiveBtn">See it live</button></div>
+        <div class="stats"><div class="stat"><strong>&lt;80ms</strong><span>cursor sync</span></div><div class="stat"><strong>∞</strong><span>canvas space</span></div><div class="stat"><strong>12+</strong><span>languages</span></div></div>
+      </div>
+      <div class="browser-wrap"><div class="browser"><div class="browser-bar"><i></i><i></i><i></i><div class="browser-url"></div></div><div class="mini-room"><div class="mini-room-top"></div><div class="mini-node node-a">Problem<small>clarify the ask</small></div><div class="mini-node node-b">Solution<small>shape the approach</small></div><div class="mini-node node-c">Result<small>test the edge cases</small></div><div class="mini-arrow"></div><div class="mini-arrow two"></div><div class="cursor-tag alex"><span>Alex</span></div><div class="cursor-tag maya"><span>Maya</span></div></div></div></div>
+    </section>
+    <section class="section" id="features"><div class="section-kicker">One room. Every signal.</div><h2>Make the thinking visible.</h2><div class="feature-grid"><article class="feature"><svg class="feature-icon" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="5" width="32" height="29" rx="3"/><path d="M10 14h20M10 21h13M10 28h18"/><circle cx="29" cy="21" r="3"/></svg><h3>Infinite whiteboard</h3><p>Move from a messy first sketch to a clear system design with a canvas that keeps up with your thinking.</p></article><article class="feature"><svg class="feature-icon" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 9-7 11 7 11M28 9l7 11-7 11M24 6l-8 28"/><path d="M17 18h6"/></svg><h3>Built-in code editor</h3><p>Switch languages, write naturally, and keep the code beside the diagram that explains it.</p></article><article class="feature"><svg class="feature-icon" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="15" cy="15" r="6"/><circle cx="27" cy="14" r="5"/><path d="M5 34c0-6 4-9 10-9s10 3 10 9M23 24c7 0 11 3 12 10"/></svg><h3>Live presence</h3><p>See where your partner is looking and invite a second opinion without breaking the flow.</p></article></div></section>
+    <section class="deep-dive" id="product"><div class="section-kicker">Inside the room</div><h2>A shared surface for the whole interview.</h2><div class="product-frame"><div class="frame-top"><span>Technical Interview · <strong>Q7K2M9</strong></span><span class="connected"><i class="status-dot"></i> Connected</span></div><div class="frame-body"><div class="frame-rail"><span>⌁</span><span>□</span><span>○</span><span>↗</span><span>T</span></div><div class="frame-canvas"><div class="frame-lines"></div></div><div class="frame-code"><span class="comment">// two pointers, one pass</span><br><span class="keyword">function</span> <span class="function">pairSum</span>(nums, target) {<br>&nbsp; <span class="keyword">const</span> seen = <span class="keyword">new</span> Map();<br>&nbsp; <span class="keyword">for</span> (<span class="keyword">const</span> [i, value] <span class="keyword">of</span> nums.entries()) {<br>&nbsp;&nbsp;&nbsp; <span class="keyword">const</span> needed = target - value;<br>&nbsp;&nbsp;&nbsp; <span class="keyword">if</span> (seen.has(needed)) <span class="keyword">return</span><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; [seen.get(needed), i];<br>&nbsp;&nbsp;&nbsp; seen.set(value, i);<br>&nbsp; }<br>&nbsp; <span class="keyword">return</span> <span class="string">null</span>;<br>}</div></div></div></section>
+    <section class="join-wrap" id="join"><div class="join-card"><div class="join-pitch"><div class="section-kicker">Your next good interview</div><h2>Bring the room with you.</h2><p>One link gets everyone onto the same page, with just enough structure to help great conversations happen.</p><ul class="perks"><li>No account required to join</li><li>Sketch and code side by side</li><li>Private room links, always yours</li></ul></div><form class="join-form" id="joinForm"><div class="field"><label for="name">YOUR NAME</label><input id="name" name="name" placeholder="e.g. Ada Lovelace" required /></div><div class="field"><label>YOUR ROLE</label><div class="role-toggle"><button type="button" class="selected" data-role="Candidate">Candidate</button><button type="button" data-role="Interviewer">Interviewer</button></div></div><div class="field"><label for="roomId">ROOM ID</label><input id="roomId" name="roomId" placeholder="6-character code" maxlength="6" /></div><button class="amber-btn" type="submit">Join interview room&nbsp; →</button><div class="divider">or</div><button class="create-room" type="button" id="createRoomBtn">+ Create a new room</button></form></div></section>
+    <footer><span>© 2025 SyncSpace</span><span>Make the invisible visible.</span></footer>
+  </main>
+  <section id="room" class="room hidden" aria-label="SyncSpace interview room">
+    <header class="room-top"><a class="brand" href="#"><span class="brand-mark">S</span><span><span class="brand-word">SyncSpace</span><span class="brand-meta">COLLABORATE · BUILD · INTERVIEW</span></span></a><div class="room-title">Technical Interview · <strong id="roomCodeLabel">Q7K2M9</strong></div><div class="room-status"><i class="status-dot"></i> Connected</div><div class="room-users"><div class="avatar" style="background:var(--amber)" data-name="You">YO</div><div class="avatar" style="background:var(--violet)" data-name="Alex Chen">AC</div><div class="avatar" style="background:var(--teal)" data-name="Maya Singh">MS</div></div><button class="invite-btn" id="inviteBtn">Invite</button><button class="leave-btn" id="leaveBtn">← Leave room</button></header>
+    <div class="room-main"><aside class="tool-rail" aria-label="Whiteboard tools"><button class="tool active" data-tool="select" title="Select and pan">⌁</button><button class="tool" data-tool="rect" title="Rectangle">□</button><button class="tool" data-tool="circle" title="Circle">○</button><button class="tool" data-tool="triangle" title="Triangle">△</button><button class="tool" data-tool="arrow" title="Arrow">↗</button><button class="tool" data-tool="text" title="Text">T</button><div class="tool-divider"></div><button class="tool" id="undoBtn" title="Undo">↶</button><button class="tool" id="redoBtn" title="Redo">↷</button><div class="tool-divider"></div><button class="tool" id="clearBtn" title="Clear page">⌫</button></aside><div class="canvas-pane" id="canvasPane"><svg id="board" viewBox="0 0 1000 700" xmlns="http://www.w3.org/2000/svg" aria-label="Infinite whiteboard"><defs><pattern id="dotGrid" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#d7d3c8"/></pattern><marker id="arrowHead" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#E8873A"/></marker></defs><rect width="10000" height="10000" x="-5000" y="-5000" fill="url(#dotGrid)" id="gridRect"/><g id="drawingLayer"></g></svg><div class="remote-cursor" id="remoteAlex"><svg width="17" height="21" viewBox="0 0 17 21"><path d="M2 1 15 13 9 14 6 20Z" fill="var(--violet)" stroke="#fff"/></svg><span style="background:var(--violet)">Alex</span></div><div class="remote-cursor" id="remoteMaya"><svg width="17" height="21" viewBox="0 0 17 21"><path d="M2 1 15 13 9 14 6 20Z" fill="var(--red)" stroke="#fff"/></svg><span style="background:var(--red)">Maya</span></div><div class="board-hint" id="boardHint">Drag to draw · Space + drag to pan · Ctrl/⌘ + scroll to zoom</div><div class="zoom-controls"><button id="zoomOut">−</button><button id="zoomIn">+</button><button id="zoomReset">Reset</button></div></div><div class="resizer" id="resizer" title="Drag to resize"></div><section class="code-pane"><div class="code-head"><span class="code-label">&lt;/&gt; Code</span><select id="languageSelect" aria-label="Code language"><option>JavaScript</option><option>Python</option><option>Java</option><option>C++</option><option>TypeScript</option><option>Go</option></select></div><div class="editor"><div class="line-numbers" id="lineNumbers">1</div><textarea id="codeInput" spellcheck="false" aria-label="Code editor"></textarea></div></section></div><div class="room-toast" id="roomToast"></div>
+  </section>
+  <script>
+    const $ = (selector) => document.querySelector(selector);
+    const landing = $('#landing'), room = $('#room'), codeInput = $('#codeInput'), lineNumbers = $('#lineNumbers');
+    let currentRole = 'Candidate', currentTool = 'select', history = [], future = [], drawing = false, startPoint, preview, panStart, view = { x: 0, y: 0, w: 1000, h: 700 };
+    const snippets = {
+      JavaScript: `// two pointers, one pass\nfunction pairSum(nums, target) {\n  const seen = new Map();\n  for (const [i, value] of nums.entries()) {\n    const needed = target - value;\n    if (seen.has(needed)) return [seen.get(needed), i];\n    seen.set(value, i);\n  }\n  return null;\n}`,
+      Python: `# two pointers, one pass\ndef pair_sum(nums, target):\n    seen = {}\n    for index, value in enumerate(nums):\n        needed = target - value\n        if needed in seen:\n            return [seen[needed], index]\n        seen[value] = index\n    return None`,
+      Java: `// two pointers, one pass\nint[] pairSum(int[] nums, int target) {\n  Map<Integer, Integer> seen = new HashMap<>();\n  for (int i = 0; i < nums.length; i++) {\n    int needed = target - nums[i];\n    if (seen.containsKey(needed))\n      return new int[]{seen.get(needed), i};\n    seen.put(nums[i], i);\n  }\n  return null;\n}`,
+      'C++': `// two pointers, one pass\nvector<int> pairSum(vector<int>& nums, int target) {\n  unordered_map<int, int> seen;\n  for (int i = 0; i < nums.size(); i++) {\n    int needed = target - nums[i];\n    if (seen.count(needed)) return {seen[needed], i};\n    seen[nums[i]] = i;\n  }\n  return {};\n}`,
+      TypeScript: `type Pair = [number, number] | null;\n\nfunction pairSum(nums: number[], target: number): Pair {\n  const seen = new Map<number, number>();\n  for (const [i, value] of nums.entries()) {\n    const needed = target - value;\n    if (seen.has(needed)) return [seen.get(needed)!, i];\n    seen.set(value, i);\n  }\n  return null;\n}`,
+      Go: `func pairSum(nums []int, target int) []int {\n  seen := make(map[int]int)\n  for i, value := range nums {\n    needed := target - value\n    if index, ok := seen[needed]; ok {\n      return []int{index, i}\n    }\n    seen[value] = i\n  }\n  return nil\n}`
+    };
+    function roomCode() { return Math.random().toString(36).slice(2, 8).toUpperCase(); }
+    function enterRoom(code) { $('#roomCodeLabel').textContent = code || roomCode(); landing.classList.add('hidden'); room.classList.remove('hidden'); document.body.style.overflow='hidden'; codeInput.value = snippets.JavaScript; updateLines(); setTimeout(() => $('#boardHint').style.opacity = '0', 4800); moveCursors(); }
+    function leaveRoom() { room.classList.add('hidden'); landing.classList.remove('hidden'); document.body.style.overflow=''; window.scrollTo({top:0, behavior:'smooth'}); }
+    function updateLines() { const count = codeInput.value.split('\n').length; lineNumbers.textContent = Array.from({length:count}, (_, i) => i + 1).join('\n'); lineNumbers.scrollTop = codeInput.scrollTop; }
+    function toast(message) { const el = $('#roomToast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 1800); }
+    function svgPoint(event) { const point = $('#board').createSVGPoint(); point.x = event.clientX; point.y = event.clientY; return point.matrixTransform($('#board').getScreenCTM().inverse()); }
+    function drawPreview(point) { if (preview) preview.remove(); const x=Math.min(startPoint.x,point.x), y=Math.min(startPoint.y,point.y), w=Math.abs(point.x-startPoint.x), h=Math.abs(point.y-startPoint.y); let node; if(currentTool==='rect') node=document.createElementNS('http://www.w3.org/2000/svg','rect'), node.setAttribute('x',x),node.setAttribute('y',y),node.setAttribute('width',w),node.setAttribute('height',h); if(currentTool==='circle') node=document.createElementNS('http://www.w3.org/2000/svg','ellipse'),node.setAttribute('cx',(startPoint.x+point.x)/2),node.setAttribute('cy',(startPoint.y+point.y)/2),node.setAttribute('rx',w/2),node.setAttribute('ry',h/2); if(currentTool==='triangle') node=document.createElementNS('http://www.w3.org/2000/svg','polygon'),node.setAttribute('points',`${startPoint.x},${y+h} ${(startPoint.x+point.x)/2},${y} ${point.x},${y+h}`); if(currentTool==='arrow') node=document.createElementNS('http://www.w3.org/2000/svg','line'),node.setAttribute('x1',startPoint.x),node.setAttribute('y1',startPoint.y),node.setAttribute('x2',point.x),node.setAttribute('y2',point.y),node.setAttribute('marker-end','url(#arrowHead)'); if(node) { node.setAttribute('fill','rgba(232,135,58,.12)'); node.setAttribute('stroke','#E8873A'); node.setAttribute('stroke-width','3'); node.setAttribute('stroke-dasharray','7 5'); preview=node; $('#drawingLayer').appendChild(node); } }
+    function finishDraw(point) { if(preview) { preview.remove(); preview=null; } const x=Math.min(startPoint.x,point.x), y=Math.min(startPoint.y,point.y), w=Math.abs(point.x-startPoint.x), h=Math.abs(point.y-startPoint.y); let node; if(currentTool==='rect') node=document.createElementNS('http://www.w3.org/2000/svg','rect'), node.setAttribute('x',x),node.setAttribute('y',y),node.setAttribute('width',w),node.setAttribute('height',h); if(currentTool==='circle') node=document.createElementNS('http://www.w3.org/2000/svg','ellipse'),node.setAttribute('cx',(startPoint.x+point.x)/2),node.setAttribute('cy',(startPoint.y+point.y)/2),node.setAttribute('rx',Math.max(w/2,4)),node.setAttribute('ry',Math.max(h/2,4)); if(currentTool==='triangle') node=document.createElementNS('http://www.w3.org/2000/svg','polygon'),node.setAttribute('points',`${startPoint.x},${y+h} ${(startPoint.x+point.x)/2},${y} ${point.x},${y+h}`); if(currentTool==='arrow') node=document.createElementNS('http://www.w3.org/2000/svg','line'),node.setAttribute('x1',startPoint.x),node.setAttribute('y1',startPoint.y),node.setAttribute('x2',point.x),node.setAttribute('y2',point.y),node.setAttribute('marker-end','url(#arrowHead)'); if(node) { node.setAttribute('fill','rgba(232,135,58,.09)'); node.setAttribute('stroke','#E8873A'); node.setAttribute('stroke-width','3'); $('#drawingLayer').appendChild(node); history.push(node); future=[]; } }
+    function setView() { $('#board').setAttribute('viewBox',`${view.x} ${view.y} ${view.w} ${view.h}`); }
+    function zoom(factor, cx=500, cy=350) { view.x += (view.w - view.w*factor) * (cx/view.w); view.y += (view.h - view.h*factor) * (cy/view.h); view.w*=factor; view.h*=factor; setView(); }
+    function moveCursors() { ['remoteAlex','remoteMaya'].forEach((id, i) => { const el=$('#'+id); el.style.left=(22 + Math.random()*58)+'%'; el.style.top=(20 + Math.random()*52)+'%'; }); }
+    document.querySelectorAll('.role-toggle button').forEach(button => button.addEventListener('click', () => { document.querySelectorAll('.role-toggle button').forEach(b=>b.classList.remove('selected')); button.classList.add('selected'); currentRole=button.dataset.role; }));
+    $('#joinForm').addEventListener('submit', (event) => { event.preventDefault(); const value=$('#roomId').value.trim().toUpperCase(); enterRoom(value || roomCode()); });
+    $('#createRoomBtn').addEventListener('click', () => { $('#roomId').value=roomCode(); $('#name').focus(); toast('New room code ready'); });
+    $('#startRoomBtn').addEventListener('click', () => enterRoom(roomCode())); $('#seeLiveBtn').addEventListener('click', () => enterRoom('Q7K2M9')); $('#navTryBtn').addEventListener('click', () => $('#join').scrollIntoView({behavior:'smooth'})); $('#signInBtn').addEventListener('click', () => { $('#name').focus(); $('#join').scrollIntoView({behavior:'smooth'}); }); $('#leaveBtn').addEventListener('click', leaveRoom);
+    $('#inviteBtn').addEventListener('click', async () => { const text='Join my SyncSpace interview room: '+$('#roomCodeLabel').textContent; try { await navigator.clipboard.writeText(text); toast('Room invite copied'); } catch { toast(text); } });
+    document.querySelectorAll('.tool[data-tool]').forEach(button => button.addEventListener('click', () => { document.querySelectorAll('.tool[data-tool]').forEach(b=>b.classList.remove('active')); button.classList.add('active'); currentTool=button.dataset.tool; $('#board').style.cursor=currentTool==='select'?'grab':currentTool==='text'?'text':'crosshair'; }));
+    $('#board').addEventListener('pointerdown', (event) => { const point=svgPoint(event); if(currentTool==='text') { const value=prompt('Add a note to the whiteboard:'); if(value) { const text=document.createElementNS('http://www.w3.org/2000/svg','text'); text.setAttribute('x',point.x); text.setAttribute('y',point.y); text.setAttribute('fill','#1C1E24'); text.setAttribute('font-family','IBM Plex Mono, monospace'); text.setAttribute('font-size','18'); text.textContent=value; $('#drawingLayer').appendChild(text); history.push(text); future=[]; } return; } if(currentTool==='select') { drawing=true; panStart={x:event.clientX,y:event.clientY,viewX:view.x,viewY:view.y}; $('#board').setPointerCapture(event.pointerId); return; } drawing=true; startPoint=point; $('#board').setPointerCapture(event.pointerId); });
+    $('#board').addEventListener('pointermove', (event) => { if(!drawing) return; if(currentTool==='select') { const rect=$('#board').getBoundingClientRect(); const scaleX=view.w/rect.width, scaleY=view.h/rect.height; view.x=panStart.viewX-(event.clientX-panStart.x)*scaleX; view.y=panStart.viewY-(event.clientY-panStart.y)*scaleY; setView(); return; } drawPreview(svgPoint(event)); });
+    $('#board').addEventListener('pointerup', (event) => { if(!drawing) return; drawing=false; if(currentTool!=='select') finishDraw(svgPoint(event)); });
+    $('#board').addEventListener('wheel', (event) => { if(!event.ctrlKey && !event.metaKey) return; event.preventDefault(); const point=svgPoint(event); zoom(event.deltaY<0?.85:1.18, point.x, point.y); }, {passive:false});
+    $('#zoomIn').addEventListener('click',()=>zoom(.8)); $('#zoomOut').addEventListener('click',()=>zoom(1.25)); $('#zoomReset').addEventListener('click',()=>{view={x:0,y:0,w:1000,h:700};setView();});
+    $('#undoBtn').addEventListener('click',()=>{const item=history.pop();if(item){item.remove();future.push(item);}}); $('#redoBtn').addEventListener('click',()=>{const item=future.pop();if(item){$('#drawingLayer').appendChild(item);history.push(item);}}); $('#clearBtn').addEventListener('click',()=>{if(!history.length)return;future.push(...history);history=[];$('#drawingLayer').replaceChildren();});
+    codeInput.addEventListener('input', updateLines); codeInput.addEventListener('scroll', updateLines); $('#languageSelect').addEventListener('change', (event)=>{codeInput.value=snippets[event.target.value];updateLines();});
+    let resizing=false; $('#resizer').addEventListener('pointerdown',()=>{resizing=true;document.body.style.cursor='col-resize';}); window.addEventListener('pointermove',(event)=>{if(!resizing)return;const area=$('.room-main').getBoundingClientRect();const width=Math.min(Math.max(area.right-event.clientX,260),area.width*.58);$('.code-pane').style.flexBasis=width+'px';}); window.addEventListener('pointerup',()=>{resizing=false;document.body.style.cursor='';});
+    setInterval(moveCursors, 2600);
+  </script>
+</body>
+</html>

@@ -1,54 +1,115 @@
-import { useEffect, useRef, useState } from "react";
+import {
+    useCallback,
+    useEffect,
+    useRef,
+    useState,
+} from "react";
+
 import { useSyncSpaceStore } from "../store/syncSpaceStore";
-import CodeEditor from "./CodeEditor";
 import socket from "../socket";
-import "./Whiteboard.css";
 
-const TOOLS = [
-    { id: "select", icon: "↖", label: "Select", key: "V" },
-    { id: "draw", icon: "✎", label: "Pen", key: "P" },
-    { id: "eraser", icon: "⌫", label: "Eraser", key: "E" },
-    { id: "line", icon: "╱", label: "Line", key: "L" },
-    { id: "arrow", icon: "→", label: "Arrow", key: "A" },
-    { id: "rectangle", icon: "□", label: "Rect", key: "R" },
-    { id: "circle", icon: "○", label: "Circle", key: "C" },
-    { id: "text", icon: "T", label: "Text", key: "T" },
-];
+const languageTemplates = {
+    JavaScript: `// SyncSpace interview workspace
 
-function createId() {
-    if (typeof crypto !== "undefined" && crypto.randomUUID) {
-        return crypto.randomUUID();
-    }
-
-    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+function solveProblem(input) {
+    return input.trim();
 }
 
-function Whiteboard({ roomId, userName }) {
+const result = solveProblem("Build together");
+
+console.log(result);`,
+
+    TypeScript: `// SyncSpace interview workspace
+
+type Input = string;
+
+function solveProblem(input: Input): Input {
+    return input.trim();
+}
+
+console.log(solveProblem("Build together"));`,
+
+    Python: `# SyncSpace interview workspace
+
+def solve_problem(input_text):
+    return input_text.strip()
+
+result = solve_problem("Build together")
+
+print(result)`,
+
+    JSON: `{
+  "project": "SyncSpace",
+  "workspace": "Interview",
+  "status": "shared"
+}`,
+};
+
+function Whiteboard({ roomId = "ROOM" }) {
     const canvasRef = useRef(null);
+    const channelRef = useRef(null);
+
+    const objectsRef = useRef([]);
+    const historyRef = useRef([]);
+    const historyIndexRef = useRef(-1);
+
     const drawingRef = useRef(false);
-    const currentItemRef = useRef(null);
-    const strokesRef = useRef([]);
+    const currentObjectRef = useRef(null);
+    const selectedObjectRef = useRef(null);
+    const dragOffsetRef = useRef(null);
+    const resizeHandleRef = useRef(null);
 
-    const undoStackRef = useRef([]);
-    const redoStackRef = useRef([]);
+    const [selectedObjectId, setSelectedObjectId] =
+        useState(null);
 
-    const lastCursorPublishRef = useRef(0);
+    const [textEditor, setTextEditor] =
+        useState(null);
 
-    const color = useSyncSpaceStore(
-        (state) => state.selectedColor
+    const [stickyEditor, setStickyEditor] =
+        useState(null);
+
+    const [historyVersion, setHistoryVersion] =
+        useState(0);
+
+    const [code, setCode] = useState(
+        languageTemplates.JavaScript
     );
 
-    const setColor = useSyncSpaceStore(
-        (state) => state.setSelectedColor
-    );
+    const [language, setLanguage] =
+        useState("JavaScript");
 
-    const lineWidth = useSyncSpaceStore(
-        (state) => state.brushSize
-    );
+    const [codeSaved, setCodeSaved] =
+        useState(false);
 
-    const setLineWidth = useSyncSpaceStore(
-        (state) => state.setBrushSize
-    );
+    const [isCodeOpen, setIsCodeOpen] =
+        useState(false);
+
+    const [showUserRoster, setShowUserRoster] =
+        useState(false);
+
+    const [codePanelWidth, setCodePanelWidth] =
+        useState(430);
+
+    const codeResizeRef = useRef(false);
+
+    const [currentUser] = useState(() => {
+        const name = localStorage.getItem("syncspace_username") || "You";
+        const role = localStorage.getItem("syncspace_role") || "Collaborator";
+
+        return {
+            id: sessionStorage.getItem("syncspace_user_id") || `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            name,
+            role,
+        };
+    });
+
+    const [activeUsers, setActiveUsers] = useState([
+        { ...currentUser, self: true },
+    ]);
+
+    // =====================================================
+    // STORE
+    // =====================================================
 
     const tool = useSyncSpaceStore(
         (state) => state.selectedTool
@@ -58,249 +119,644 @@ function Whiteboard({ roomId, userName }) {
         (state) => state.setSelectedTool
     );
 
-    const [textSize, setTextSize] = useState(24);
-    const [textEditor, setTextEditor] = useState(null);
-    const [remoteCursors, setRemoteCursors] = useState({});
-    const [showHelp, setShowHelp] = useState(false);
-    const [copied, setCopied] = useState(false);
-
-    const userIdRef = useRef(
-        localStorage.getItem("syncspace_user_id") ||
-        createId()
+    const color = useSyncSpaceStore(
+        (state) => state.selectedColor
     );
 
-    const cursorColorRef = useRef(
-        localStorage.getItem("syncspace_cursor_color") ||
-        "#6366f1"
+    const setColor = useSyncSpaceStore(
+        (state) => state.setSelectedColor
     );
 
-    useEffect(() => {
-        localStorage.setItem(
-            "syncspace_user_id",
-            userIdRef.current
-        );
+    const brushSize = useSyncSpaceStore(
+        (state) => state.brushSize
+    );
 
-        localStorage.setItem(
-            "syncspace_cursor_color",
-            cursorColorRef.current
+    const setBrushSize = useSyncSpaceStore(
+        (state) => state.setBrushSize
+    );
+
+    const textSize = useSyncSpaceStore(
+        (state) => state.textSize
+    );
+
+    const setTextSize = useSyncSpaceStore(
+        (state) => state.setTextSize
+    );
+
+    const zoom = useSyncSpaceStore(
+        (state) => state.zoom
+    );
+
+    const zoomIn = useSyncSpaceStore(
+        (state) => state.zoomIn
+    );
+
+    const zoomOut = useSyncSpaceStore(
+        (state) => state.zoomOut
+    );
+
+    const resetZoom = useSyncSpaceStore(
+        (state) => state.resetZoom
+    );
+
+    const showGrid = useSyncSpaceStore(
+        (state) => state.showGrid
+    );
+
+    const toggleGrid = useSyncSpaceStore(
+        (state) => state.toggleGrid
+    );
+
+    // =====================================================
+    // REFRESH
+    // =====================================================
+
+    const refresh = useCallback(() => {
+        setHistoryVersion(
+            (value) => value + 1
         );
     }, []);
 
-    const publish = (message) => {
-        if (!roomId) return;
+    // =====================================================
+    // ID
+    // =====================================================
 
-        socket.emit("whiteboard-event", {
-            roomId,
-            userId: userIdRef.current,
-            userName: userName || "Guest",
-            cursorColor: cursorColorRef.current,
-            ...message,
-        });
+    const createId = () => {
+        return `${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2, 9)}`;
     };
 
-    const getPosition = (event) => {
-        const canvas = canvasRef.current;
+    // =====================================================
+    // BROADCAST
+    // =====================================================
 
-        if (!canvas) {
-            return { x: 0, y: 0 };
-        }
+    const publish = useCallback((message) => {
+        channelRef.current?.postMessage(message);
+    }, []);
 
-        const rect = canvas.getBoundingClientRect();
+    // =====================================================
+    // HISTORY
+    // =====================================================
 
-        return {
-            x: event.clientX - rect.left,
-            y: event.clientY - rect.top,
-        };
-    };
-
-    const drawItem = (item) => {
-        const canvas = canvasRef.current;
-
-        if (!canvas || !item) return;
-
-        const context = canvas.getContext("2d");
-
-        if (!context) return;
-
-        context.save();
-
-        context.fillStyle = item.color || "#111827";
-        context.strokeStyle = item.color || "#111827";
-        context.lineWidth = item.width || 3;
-        context.lineCap = "round";
-        context.lineJoin = "round";
-
-        if (item.tool === "eraser") {
-            context.globalCompositeOperation =
-                "destination-out";
-        } else {
-            context.globalCompositeOperation =
-                "source-over";
-        }
-
-        /*
-         * TEXT
-         */
-        if (item.type === "text") {
-            context.globalCompositeOperation =
-                "source-over";
-
-            context.font =
-                `600 ${item.width || 24}px Inter, Arial, sans-serif`;
-
-            context.fillText(
-                item.text || "",
-                item.points[0].x,
-                item.points[0].y
-            );
-
-            context.restore();
-            return;
-        }
-
-        /*
-         * RECTANGLE
-         */
-        if (item.type === "rectangle") {
-            const start = item.points[0];
-            const end = item.points[item.points.length - 1];
-
-            context.strokeRect(
-                start.x,
-                start.y,
-                end.x - start.x,
-                end.y - start.y
-            );
-
-            context.restore();
-            return;
-        }
-
-        /*
-         * CIRCLE
-         */
-        if (item.type === "circle") {
-            const start = item.points[0];
-            const end = item.points[item.points.length - 1];
-
-            const width = end.x - start.x;
-            const height = end.y - start.y;
-
-            const radiusX = Math.abs(width) / 2;
-            const radiusY = Math.abs(height) / 2;
-
-            const centerX = start.x + width / 2;
-            const centerY = start.y + height / 2;
-
-            context.beginPath();
-
-            context.ellipse(
-                centerX,
-                centerY,
-                Math.max(radiusX, 1),
-                Math.max(radiusY, 1),
-                0,
-                0,
-                Math.PI * 2
-            );
-
-            context.stroke();
-
-            context.restore();
-            return;
-        }
-
-        /*
-         * LINE
-         */
-        if (item.type === "line") {
-            const start = item.points[0];
-            const end = item.points[item.points.length - 1];
-
-            context.beginPath();
-            context.moveTo(start.x, start.y);
-            context.lineTo(end.x, end.y);
-            context.stroke();
-
-            context.restore();
-            return;
-        }
-
-        /*
-         * ARROW
-         */
-        if (item.type === "arrow") {
-            const start = item.points[0];
-            const end = item.points[item.points.length - 1];
-
-            const angle = Math.atan2(
-                end.y - start.y,
-                end.x - start.x
-            );
-
-            const arrowSize = Math.max(
-                8,
-                (item.width || 3) * 3
-            );
-
-            context.beginPath();
-            context.moveTo(start.x, start.y);
-            context.lineTo(end.x, end.y);
-            context.stroke();
-
-            context.beginPath();
-
-            context.moveTo(
-                end.x - arrowSize * Math.cos(angle - Math.PI / 6),
-                end.y - arrowSize * Math.sin(angle - Math.PI / 6)
-            );
-
-            context.lineTo(end.x, end.y);
-
-            context.lineTo(
-                end.x - arrowSize * Math.cos(angle + Math.PI / 6),
-                end.y - arrowSize * Math.sin(angle + Math.PI / 6)
-            );
-
-            context.stroke();
-
-            context.restore();
-            return;
-        }
-
-        /*
-         * FREEHAND / ERASER
-         */
-        if (!item.points || item.points.length === 0) {
-            context.restore();
-            return;
-        }
-
-        context.beginPath();
-
-        context.moveTo(
-            item.points[0].x,
-            item.points[0].y
+    const saveHistory = useCallback(() => {
+        const snapshot = JSON.parse(
+            JSON.stringify(objectsRef.current)
         );
 
-        item.points.slice(1).forEach((point) => {
-            context.lineTo(point.x, point.y);
-        });
+        const index =
+            historyIndexRef.current;
 
-        context.stroke();
-        context.closePath();
+        historyRef.current =
+            historyRef.current.slice(
+                0,
+                index + 1
+            );
 
-        context.restore();
-    };
+        historyRef.current.push(
+            snapshot
+        );
 
-    const redraw = () => {
-        const canvas = canvasRef.current;
+        historyIndexRef.current =
+            historyRef.current.length - 1;
 
-        if (!canvas) return;
+        refresh();
+    }, [refresh]);
 
-        const context = canvas.getContext("2d");
+    // =====================================================
+    // DRAW OBJECT
+    // =====================================================
 
-        if (!context) return;
+    const drawObject = useCallback(
+        (context, object) => {
+            context.save();
+
+            context.lineWidth =
+                object.width || 3;
+
+            context.strokeStyle =
+                object.color || "#111827";
+
+            context.fillStyle =
+                object.fill || "transparent";
+
+            context.lineCap = "round";
+            context.lineJoin = "round";
+
+            // -------------------------
+            // PEN / ERASER
+            // -------------------------
+
+            if (object.type === "stroke") {
+                const points =
+                    object.points || [];
+
+                if (!points.length) {
+                    context.restore();
+                    return;
+                }
+
+                if (
+                    object.tool ===
+                    "eraser"
+                ) {
+                    context.globalCompositeOperation =
+                        "destination-out";
+                }
+
+                context.beginPath();
+
+                context.moveTo(
+                    points[0].x,
+                    points[0].y
+                );
+
+                for (
+                    let i = 1;
+                    i < points.length;
+                    i++
+                ) {
+                    context.lineTo(
+                        points[i].x,
+                        points[i].y
+                    );
+                }
+
+                context.stroke();
+
+                context.restore();
+                return;
+            }
+
+            // -------------------------
+            // LINE
+            // -------------------------
+
+            if (object.type === "line") {
+                context.beginPath();
+
+                context.moveTo(
+                    object.x1,
+                    object.y1
+                );
+
+                context.lineTo(
+                    object.x2,
+                    object.y2
+                );
+
+                context.stroke();
+
+                context.restore();
+                return;
+            }
+
+            // -------------------------
+            // ARROW
+            // -------------------------
+
+            if (object.type === "arrow") {
+                const angle =
+                    Math.atan2(
+                        object.y2 -
+                            object.y1,
+                        object.x2 -
+                            object.x1
+                    );
+
+                const headLength =
+                    12 +
+                    (object.width || 3);
+
+                context.beginPath();
+
+                context.moveTo(
+                    object.x1,
+                    object.y1
+                );
+
+                context.lineTo(
+                    object.x2,
+                    object.y2
+                );
+
+                context.stroke();
+
+                context.beginPath();
+
+                context.moveTo(
+                    object.x2,
+                    object.y2
+                );
+
+                context.lineTo(
+                    object.x2 -
+                        headLength *
+                            Math.cos(
+                                angle -
+                                    Math.PI / 6
+                            ),
+                    object.y2 -
+                        headLength *
+                            Math.sin(
+                                angle -
+                                    Math.PI / 6
+                            )
+                );
+
+                context.lineTo(
+                    object.x2 -
+                        headLength *
+                            Math.cos(
+                                angle +
+                                    Math.PI / 6
+                            ),
+                    object.y2 -
+                        headLength *
+                            Math.sin(
+                                angle +
+                                    Math.PI / 6
+                            )
+                );
+
+                context.closePath();
+
+                context.fillStyle =
+                    object.color;
+
+                context.fill();
+
+                context.stroke();
+
+                context.restore();
+                return;
+            }
+
+            // -------------------------
+            // RECTANGLE
+            // -------------------------
+
+            if (
+                object.type ===
+                "rectangle"
+            ) {
+                const width =
+                    object.x2 -
+                    object.x1;
+
+                const height =
+                    object.y2 -
+                    object.y1;
+
+                context.beginPath();
+
+                context.rect(
+                    object.x1,
+                    object.y1,
+                    width,
+                    height
+                );
+
+                if (object.fill) {
+                    context.fill();
+                }
+
+                context.stroke();
+
+                context.restore();
+                return;
+            }
+
+            // -------------------------
+            // CIRCLE
+            // -------------------------
+
+            if (
+                object.type ===
+                "circle"
+            ) {
+                const centerX =
+                    (object.x1 +
+                        object.x2) /
+                    2;
+
+                const centerY =
+                    (object.y1 +
+                        object.y2) /
+                    2;
+
+                const radiusX =
+                    Math.abs(
+                        object.x2 -
+                            object.x1
+                    ) / 2;
+
+                const radiusY =
+                    Math.abs(
+                        object.y2 -
+                            object.y1
+                    ) / 2;
+
+                context.beginPath();
+
+                context.ellipse(
+                    centerX,
+                    centerY,
+                    radiusX,
+                    radiusY,
+                    0,
+                    0,
+                    Math.PI * 2
+                );
+
+                if (object.fill) {
+                    context.fill();
+                }
+
+                context.stroke();
+
+                context.restore();
+                return;
+            }
+
+            if (object.type === "triangle") {
+                const left = Math.min(object.x1, object.x2);
+                const right = Math.max(object.x1, object.x2);
+                const top = Math.min(object.y1, object.y2);
+                const bottom = Math.max(object.y1, object.y2);
+
+                context.beginPath();
+                context.moveTo((left + right) / 2, top);
+                context.lineTo(right, bottom);
+                context.lineTo(left, bottom);
+                context.closePath();
+
+                if (object.fill) {
+                    context.fill();
+                }
+
+                context.stroke();
+                context.restore();
+                return;
+            }
+
+            // -------------------------
+            // TEXT
+            // -------------------------
+
+            if (object.type === "text") {
+                context.font =
+                    `${object.size || 24}px Inter, sans-serif`;
+
+                context.fillStyle =
+                    object.color ||
+                    "#111827";
+
+                context.fillText(
+                    object.text,
+                    object.x,
+                    object.y
+                );
+
+                context.restore();
+                return;
+            }
+
+            // -------------------------
+            // STICKY NOTE
+            // -------------------------
+
+            if (
+                object.type ===
+                "sticky"
+            ) {
+                context.fillStyle =
+                    object.background ||
+                    "#fef08a";
+
+                context.strokeStyle =
+                    "#eab308";
+
+                context.beginPath();
+
+                if (
+                    typeof context.roundRect ===
+                    "function"
+                ) {
+                    context.roundRect(
+                        object.x,
+                        object.y,
+                        object.width,
+                        object.height,
+                        12
+                    );
+                } else {
+                    context.rect(
+                        object.x,
+                        object.y,
+                        object.width,
+                        object.height
+                    );
+                }
+
+                context.fill();
+                context.stroke();
+
+                context.fillStyle =
+                    "#713f12";
+
+                context.font =
+                    "15px Inter, sans-serif";
+
+                const lines =
+                    object.text.split(
+                        "\n"
+                    );
+
+                lines.forEach(
+                    (line, index) => {
+                        context.fillText(
+                            line,
+                            object.x + 12,
+                            object.y +
+                                25 +
+                                index *
+                                    20
+                        );
+                    }
+                );
+
+                context.restore();
+                return;
+            }
+
+            context.restore();
+        },
+        []
+    );
+
+    // =====================================================
+    // BOUNDS
+    // =====================================================
+
+    const getBounds = useCallback(
+        (object) => {
+            if (
+                [
+                    "line",
+                    "arrow",
+                    "rectangle",
+                    "circle",
+                    "triangle",
+                ].includes(
+                    object.type
+                )
+            ) {
+                return {
+                    x:
+                        Math.min(
+                            object.x1,
+                            object.x2
+                        ) - 8,
+
+                    y:
+                        Math.min(
+                            object.y1,
+                            object.y2
+                        ) - 8,
+
+                    width:
+                        Math.abs(
+                            object.x2 -
+                                object.x1
+                        ) + 16,
+
+                    height:
+                        Math.abs(
+                            object.y2 -
+                                object.y1
+                        ) + 16,
+                };
+            }
+
+            if (
+                object.type ===
+                "text"
+            ) {
+                return {
+                    x:
+                        object.x - 5,
+
+                    y:
+                        object.y -
+                        object.size,
+
+                    width:
+                        Math.max(
+                            40,
+                            object.text
+                                .length *
+                                object.size *
+                                0.55
+                        ),
+
+                    height:
+                        object.size +
+                        10,
+                };
+            }
+
+            if (
+                object.type ===
+                "sticky"
+            ) {
+                return {
+                    x:
+                        object.x - 5,
+
+                    y:
+                        object.y - 5,
+
+                    width:
+                        object.width +
+                        10,
+
+                    height:
+                        object.height +
+                        10,
+                };
+            }
+
+            if (
+                object.type ===
+                "stroke"
+            ) {
+                const points =
+                    object.points || [];
+
+                if (!points.length) {
+                    return null;
+                }
+
+                const xs =
+                    points.map(
+                        (point) =>
+                            point.x
+                    );
+
+                const ys =
+                    points.map(
+                        (point) =>
+                            point.y
+                    );
+
+                const minX =
+                    Math.min(...xs);
+
+                const minY =
+                    Math.min(...ys);
+
+                const maxX =
+                    Math.max(...xs);
+
+                const maxY =
+                    Math.max(...ys);
+
+                return {
+                    x: minX - 8,
+                    y: minY - 8,
+
+                    width:
+                        maxX -
+                        minX +
+                        16,
+
+                    height:
+                        maxY -
+                        minY +
+                        16,
+                };
+            }
+
+            return null;
+        },
+        []
+    );
+
+    // =====================================================
+    // REDRAW
+    // =====================================================
+
+    const redraw = useCallback(() => {
+        const canvas =
+            canvasRef.current;
+
+        if (!canvas) {
+            return;
+        }
+
+        const context =
+            canvas.getContext("2d");
 
         context.clearRect(
             0,
@@ -309,334 +765,1209 @@ function Whiteboard({ roomId, userName }) {
             canvas.height
         );
 
-        strokesRef.current.forEach(drawItem);
+        objectsRef.current.forEach(
+            (object) => {
+                drawObject(
+                    context,
+                    object
+                );
+            }
+        );
 
-        if (currentItemRef.current) {
-            drawItem(currentItemRef.current);
+        // Selection
+        if (selectedObjectId) {
+            const selected =
+                objectsRef.current.find(
+                    (object) =>
+                        object.id ===
+                        selectedObjectId
+                );
+
+            if (selected) {
+                const bounds =
+                    getBounds(
+                        selected
+                    );
+
+                if (bounds) {
+                    context.save();
+
+                    context.strokeStyle =
+                        "#6366f1";
+
+                    context.lineWidth =
+                        1.5;
+
+                    context.setLineDash(
+                        [6, 4]
+                    );
+
+                    context.strokeRect(
+                        bounds.x,
+                        bounds.y,
+                        bounds.width,
+                        bounds.height
+                    );
+
+                    context.setLineDash(
+                        []
+                    );
+
+                    context.fillStyle =
+                        "#ffffff";
+
+                    context.strokeStyle =
+                        "#6366f1";
+
+                    if (selected.type === "arrow") {
+                        [
+                            [selected.x1, selected.y1],
+                            [selected.x2, selected.y2],
+                        ].forEach(([x, y]) => {
+                            context.beginPath();
+                            context.arc(x, y, 6, 0, Math.PI * 2);
+                            context.fill();
+                            context.stroke();
+                        });
+                    } else {
+                        const handles = [
+                            [bounds.x, bounds.y],
+                            [bounds.x + bounds.width, bounds.y],
+                            [bounds.x, bounds.y + bounds.height],
+                            [bounds.x + bounds.width, bounds.y + bounds.height],
+                        ];
+
+                        handles.forEach(([x, y]) => {
+                            context.beginPath();
+                            context.rect(x - 4, y - 4, 8, 8);
+                            context.fill();
+                            context.stroke();
+                        });
+                    }
+
+                    context.restore();
+                }
+            }
         }
-    };
+    }, [
+        selectedObjectId,
+        drawObject,
+        getBounds,
+    ]);
 
-    const saveHistory = () => {
-        undoStackRef.current.push(
-            JSON.stringify(strokesRef.current)
-        );
+    // =====================================================
+    // POSITION
+    // =====================================================
 
-        if (undoStackRef.current.length > 50) {
-            undoStackRef.current.shift();
+    const getPosition = (event) => {
+        const canvas =
+            canvasRef.current;
+
+        if (!canvas) {
+            return {
+                x: 0,
+                y: 0,
+            };
         }
 
-        redoStackRef.current = [];
+        const rect =
+            canvas.getBoundingClientRect();
+
+        return {
+            x:
+                (event.clientX -
+                    rect.left) /
+                zoom,
+
+            y:
+                (event.clientY -
+                    rect.top) /
+                zoom,
+        };
     };
 
-    const undo = () => {
-        if (strokesRef.current.length === 0) return;
+    // =====================================================
+    // HIT TEST
+    // =====================================================
 
-        redoStackRef.current.push(
-            JSON.stringify(strokesRef.current)
-        );
+    const findObjectAt = (point) => {
+        for (
+            let i =
+                objectsRef.current
+                    .length - 1;
+            i >= 0;
+            i--
+        ) {
+            const object =
+                objectsRef.current[i];
 
-        strokesRef.current.pop();
+            const bounds =
+                getBounds(object);
 
-        redraw();
+            if (!bounds) {
+                continue;
+            }
+
+            if (
+                point.x >= bounds.x &&
+                point.x <=
+                    bounds.x +
+                        bounds.width &&
+                point.y >= bounds.y &&
+                point.y <=
+                    bounds.y +
+                        bounds.height
+            ) {
+                return object;
+            }
+        }
+
+        return null;
     };
 
-    const redo = () => {
-        const snapshot =
-            redoStackRef.current.pop();
+    const findResizeHandle = (point, bounds) => {
+        if (!bounds) {
+            return null;
+        }
 
-        if (!snapshot) return;
+        const selected = selectedObjectRef.current;
 
-        undoStackRef.current.push(
-            JSON.stringify(strokesRef.current)
-        );
+        if (selected?.type === "arrow") {
+            const startDistance = Math.hypot(
+                point.x - selected.x1,
+                point.y - selected.y1
+            );
+            const endDistance = Math.hypot(
+                point.x - selected.x2,
+                point.y - selected.y2
+            );
 
-        strokesRef.current =
-            JSON.parse(snapshot);
+            if (startDistance <= 14) {
+                return "start";
+            }
 
-        redraw();
+            if (endDistance <= 14) {
+                return "end";
+            }
+
+            return null;
+        }
+
+        const handles = {
+            nw: [bounds.x, bounds.y],
+            ne: [bounds.x + bounds.width, bounds.y],
+            sw: [bounds.x, bounds.y + bounds.height],
+            se: [bounds.x + bounds.width, bounds.y + bounds.height],
+        };
+
+        return Object.entries(handles).find(([, [x, y]]) =>
+            Math.abs(point.x - x) <= 12 && Math.abs(point.y - y) <= 12
+        )?.[0] || null;
     };
 
-    const clearBoard = () => {
-        if (strokesRef.current.length === 0) {
+    // =====================================================
+    // START DRAWING
+    // =====================================================
+
+    const startDrawing = (event) => {
+        event.currentTarget
+            .setPointerCapture?.(
+                event.pointerId
+            );
+
+        const point =
+            getPosition(event);
+
+        // -------------------------
+        // SELECT
+        // -------------------------
+
+        if (tool === "select") {
+            if (selectedObjectRef.current) {
+                const selectedBounds = getBounds(selectedObjectRef.current);
+                const resizeHandle = findResizeHandle(point, selectedBounds);
+
+                if (resizeHandle) {
+                    resizeHandleRef.current = resizeHandle;
+                    drawingRef.current = true;
+                    return;
+                }
+            }
+
+            const object =
+                findObjectAt(point);
+
+            if (object) {
+                selectedObjectRef.current =
+                    object;
+
+                setSelectedObjectId(
+                    object.id
+                );
+
+                const baseX =
+                    object.x ??
+                    object.x1 ??
+                    object.points?.[0]
+                        ?.x ??
+                    point.x;
+
+                const baseY =
+                    object.y ??
+                    object.y1 ??
+                    object.points?.[0]
+                        ?.y ??
+                    point.y;
+
+                dragOffsetRef.current = {
+                    x:
+                        point.x -
+                        baseX,
+
+                    y:
+                        point.y -
+                        baseY,
+                };
+
+                    resizeHandleRef.current = null;
+
+                drawingRef.current =
+                    true;
+            } else {
+                selectedObjectRef.current =
+                    null;
+
+                setSelectedObjectId(
+                    null
+                );
+
+                redraw();
+            }
+
             return;
         }
 
-        const confirmed = window.confirm(
-            "Clear the entire whiteboard?"
+        // -------------------------
+        // TEXT
+        // -------------------------
+
+        if (tool === "text") {
+            setTextEditor({
+                x: point.x,
+                y: point.y,
+                value: "",
+            });
+
+            return;
+        }
+
+        // -------------------------
+        // STICKY
+        // -------------------------
+
+        if (
+            tool ===
+            "sticky"
+        ) {
+            setStickyEditor({
+                x: point.x,
+                y: point.y,
+                value: "",
+            });
+
+            return;
+        }
+
+        // -------------------------
+        // DRAW
+        // -------------------------
+
+        drawingRef.current =
+            true;
+
+        let object;
+
+        if (
+            tool === "draw" ||
+            tool === "eraser"
+        ) {
+            object = {
+                id: createId(),
+                type: "stroke",
+                tool,
+                color,
+
+                width:
+                    tool ===
+                    "eraser"
+                        ? brushSize *
+                          4
+                        : brushSize,
+
+                points: [point],
+            };
+        } else {
+            object = {
+                id: createId(),
+                type: tool,
+                color,
+                width: brushSize,
+
+                x1: point.x,
+                y1: point.y,
+                x2: point.x,
+                y2: point.y,
+            };
+        }
+
+        objectsRef.current.push(
+            object
         );
 
-        if (!confirmed) return;
+        currentObjectRef.current =
+            object;
+
+        redraw();
+    };
+
+    // =====================================================
+    // MOVE / DRAW
+    // =====================================================
+
+    const moveDrawing = (event) => {
+        if (!drawingRef.current) {
+            return;
+        }
+
+        const point =
+            getPosition(event);
+
+        // -------------------------
+        // MOVE SELECTED
+        // -------------------------
+
+        if (
+            tool === "select" &&
+            selectedObjectRef.current
+        ) {
+            const object =
+                selectedObjectRef.current;
+
+            if (resizeHandleRef.current && [
+                "line",
+                "arrow",
+                "rectangle",
+                "circle",
+                "triangle",
+            ].includes(object.type)) {
+                const handle = resizeHandleRef.current;
+
+                if (object.type === "arrow") {
+                    if (handle === "start") {
+                        object.x1 = point.x;
+                        object.y1 = point.y;
+                    }
+
+                    if (handle === "end") {
+                        object.x2 = point.x;
+                        object.y2 = point.y;
+                    }
+                } else {
+                    if (handle.includes("w")) object.x1 = point.x;
+                    if (handle.includes("e")) object.x2 = point.x;
+                    if (handle.includes("n")) object.y1 = point.y;
+                    if (handle.includes("s")) object.y2 = point.y;
+                }
+
+                redraw();
+                return;
+            }
+
+            const offset =
+                dragOffsetRef.current;
+
+            if (!offset) {
+                return;
+            }
+
+            const newX =
+                point.x -
+                offset.x;
+
+            const newY =
+                point.y -
+                offset.y;
+
+            if (
+                [
+                    "line",
+                    "arrow",
+                    "rectangle",
+                    "circle",
+                    "triangle",
+                ].includes(
+                    object.type
+                )
+            ) {
+                const width =
+                    object.x2 -
+                    object.x1;
+
+                const height =
+                    object.y2 -
+                    object.y1;
+
+                object.x1 = newX;
+                object.y1 = newY;
+
+                object.x2 =
+                    newX + width;
+
+                object.y2 =
+                    newY + height;
+            } else if (
+                object.type ===
+                    "text" ||
+                object.type ===
+                    "sticky"
+            ) {
+                object.x = newX;
+                object.y = newY;
+            } else if (
+                object.type ===
+                "stroke"
+            ) {
+                const first =
+                    object.points[0];
+
+                const moveX =
+                    newX - first.x;
+
+                const moveY =
+                    newY - first.y;
+
+                object.points =
+                    object.points.map(
+                        (point) => ({
+                            x:
+                                point.x +
+                                moveX,
+
+                            y:
+                                point.y +
+                                moveY,
+                        })
+                    );
+            }
+
+            redraw();
+            return;
+        }
+
+        // -------------------------
+        // DRAW
+        // -------------------------
+
+        const object =
+            currentObjectRef.current;
+
+        if (!object) {
+            return;
+        }
+
+        if (
+            tool === "draw" ||
+            tool === "eraser"
+        ) {
+            object.points.push(
+                point
+            );
+        } else {
+            object.x2 = point.x;
+            object.y2 = point.y;
+        }
+
+        redraw();
+    };
+
+    // =====================================================
+    // STOP
+    // =====================================================
+
+    const stopDrawing = () => {
+        if (!drawingRef.current) {
+            return;
+        }
+
+        drawingRef.current =
+            false;
+
+        if (tool === "select") {
+            saveHistory();
+
+            publish({
+                type:
+                    "whiteboard-state",
+
+                objects:
+                    objectsRef.current,
+            });
+
+            selectedObjectRef.current =
+                null;
+
+            dragOffsetRef.current =
+                null;
+
+            resizeHandleRef.current =
+                null;
+
+            return;
+        }
+
+        const object =
+            currentObjectRef.current;
+
+        if (object) {
+            publish({
+                type:
+                    "whiteboard-object",
+
+                object,
+            });
+
+            saveHistory();
+        }
+
+        currentObjectRef.current =
+            null;
+    };
+
+    // =====================================================
+    // TEXT
+    // =====================================================
+
+    const commitText = () => {
+        if (
+            !textEditor ||
+            !textEditor.value.trim()
+        ) {
+            setTextEditor(null);
+            return;
+        }
+
+        const object = {
+            id: createId(),
+            type: "text",
+
+            text:
+                textEditor.value.trim(),
+
+            x: textEditor.x,
+            y: textEditor.y,
+
+            size: textSize,
+            color,
+        };
+
+        objectsRef.current.push(
+            object
+        );
+
+        publish({
+            type:
+                "whiteboard-object",
+
+            object,
+        });
 
         saveHistory();
 
-        strokesRef.current = [];
-        currentItemRef.current = null;
+        setTextEditor(null);
 
         redraw();
-
-        publish({
-            type: "whiteboard-clear",
-        });
     };
 
-    /*
-     * CANVAS RESIZE
-     */
+    // =====================================================
+    // STICKY
+    // =====================================================
+
+    const commitSticky = () => {
+        if (
+            !stickyEditor ||
+            !stickyEditor.value.trim()
+        ) {
+            setStickyEditor(null);
+            return;
+        }
+
+        const object = {
+            id: createId(),
+            type: "sticky",
+
+            x: stickyEditor.x,
+            y: stickyEditor.y,
+
+            width: 190,
+            height: 135,
+
+            text:
+                stickyEditor.value.trim(),
+
+            background:
+                "#fef08a",
+        };
+
+        objectsRef.current.push(
+            object
+        );
+
+        publish({
+            type:
+                "whiteboard-object",
+
+            object,
+        });
+
+        saveHistory();
+
+        setStickyEditor(null);
+
+        redraw();
+    };
+
+    // =====================================================
+    // DELETE
+    // =====================================================
+
+    const deleteSelected = useCallback(() => {
+        if (!selectedObjectId) {
+            return;
+        }
+
+        objectsRef.current =
+            objectsRef.current.filter(
+                (object) =>
+                    object.id !==
+                    selectedObjectId
+            );
+
+        setSelectedObjectId(null);
+
+        saveHistory();
+
+        publish({
+            type:
+                "whiteboard-state",
+
+            objects:
+                objectsRef.current,
+        });
+
+        redraw();
+    }, [
+        selectedObjectId,
+        saveHistory,
+        publish,
+        redraw,
+    ]);
+
+    // =====================================================
+    // CLEAR
+    // =====================================================
+
+    const clearBoard = () => {
+        if (
+            objectsRef.current
+                .length === 0
+        ) {
+            return;
+        }
+
+        const confirmed =
+            window.confirm(
+                "Clear the entire whiteboard?"
+            );
+
+        if (!confirmed) {
+            return;
+        }
+
+        objectsRef.current = [];
+
+        setSelectedObjectId(null);
+
+        saveHistory();
+
+        publish({
+            type:
+                "whiteboard-state",
+
+            objects: [],
+        });
+
+        redraw();
+    };
+
+    // =====================================================
+    // UNDO
+    // =====================================================
+
+    const undo = useCallback(() => {
+        if (
+            historyIndexRef.current <=
+            0
+        ) {
+            return;
+        }
+
+        historyIndexRef.current -=
+            1;
+
+        const snapshot =
+            historyRef.current[
+                historyIndexRef.current
+            ];
+
+        objectsRef.current =
+            JSON.parse(
+                JSON.stringify(
+                    snapshot
+                )
+            );
+
+        setSelectedObjectId(null);
+
+        publish({
+            type:
+                "whiteboard-state",
+
+            objects:
+                objectsRef.current,
+        });
+
+        refresh();
+        redraw();
+    }, [
+        publish,
+        refresh,
+        redraw,
+    ]);
+
+    // =====================================================
+    // REDO
+    // =====================================================
+
+    const redo = useCallback(() => {
+        if (
+            historyIndexRef.current >=
+            historyRef.current
+                .length -
+                1
+        ) {
+            return;
+        }
+
+        historyIndexRef.current +=
+            1;
+
+        const snapshot =
+            historyRef.current[
+                historyIndexRef.current
+            ];
+
+        objectsRef.current =
+            JSON.parse(
+                JSON.stringify(
+                    snapshot
+                )
+            );
+
+        setSelectedObjectId(null);
+
+        publish({
+            type:
+                "whiteboard-state",
+
+            objects:
+                objectsRef.current,
+        });
+
+        refresh();
+        redraw();
+    }, [
+        publish,
+        refresh,
+        redraw,
+    ]);
+
+    // =====================================================
+    // CANVAS RESIZE
+    // =====================================================
+
     useEffect(() => {
-        const canvas = canvasRef.current;
+        const canvas =
+            canvasRef.current;
 
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
 
-        const resizeCanvas = () => {
+        const resize = () => {
             const rect =
                 canvas.getBoundingClientRect();
 
-            const dpr =
-                window.devicePixelRatio || 1;
-
             canvas.width =
-                Math.max(1, rect.width * dpr);
+                Math.max(
+                    300,
+                    Math.floor(
+                        rect.width
+                    )
+                );
 
             canvas.height =
-                Math.max(1, rect.height * dpr);
-
-            canvas.style.width =
-                `${rect.width}px`;
-
-            canvas.style.height =
-                `${rect.height}px`;
-
-            const context =
-                canvas.getContext("2d");
-
-            if (!context) return;
-
-            context.setTransform(
-                dpr,
-                0,
-                0,
-                dpr,
-                0,
-                0
-            );
-
-            context.lineCap = "round";
-            context.lineJoin = "round";
+                Math.max(
+                    300,
+                    Math.floor(
+                        rect.height
+                    )
+                );
 
             redraw();
         };
 
-        resizeCanvas();
+        resize();
 
         window.addEventListener(
             "resize",
-            resizeCanvas
+            resize
         );
 
         return () => {
             window.removeEventListener(
                 "resize",
-                resizeCanvas
+                resize
             );
         };
-    }, []);
+    }, [redraw]);
 
-    /*
-     * SOCKET.IO EVENTS
-     */
+    // =====================================================
+    // ROOM CHANNEL
+    // =====================================================
+
     useEffect(() => {
-        if (!roomId) return;
+        if (
+            !roomId ||
+            typeof BroadcastChannel ===
+                "undefined"
+        ) {
+            return undefined;
+        }
 
-        const handleWhiteboardEvent = (
-            message
+        const channel =
+            new BroadcastChannel(
+                `syncspace-room-${roomId}`
+            );
+
+        channelRef.current =
+            channel;
+
+        channel.onmessage = (
+            event
         ) => {
-            if (!message) return;
+            const message =
+                event.data;
 
-            if (message.roomId !== roomId) {
+            if (message.type === "presence-join" || message.type === "presence-ping") {
+                setActiveUsers((users) => {
+                    const nextUser = { ...message.user, self: false };
+                    const withoutUser = users.filter((user) => user.id !== nextUser.id);
+                    return [...withoutUser, nextUser];
+                });
                 return;
             }
 
-            if (
-                message.userId ===
-                userIdRef.current
-            ) {
-                return;
-            }
-
-            if (
-                message.type ===
-                "whiteboard-item"
-            ) {
-                if (!message.item) return;
-
-                strokesRef.current.push(
-                    message.item
-                );
-
-                redraw();
-
+            if (message.type === "presence-leave") {
+                setActiveUsers((users) => users.filter((user) => user.id !== message.userId));
                 return;
             }
 
             if (
                 message.type ===
-                "whiteboard-clear"
+                "whiteboard-object"
             ) {
-                strokesRef.current = [];
-                currentItemRef.current = null;
+                const exists =
+                    objectsRef.current.some(
+                        (object) =>
+                            object.id ===
+                            message
+                                .object
+                                .id
+                    );
 
-                redraw();
+                if (!exists) {
+                    objectsRef.current.push(
+                        message.object
+                    );
 
-                return;
-            }
-
-            if (
-                message.type ===
-                "cursor-move"
-            ) {
-                setRemoteCursors(
-                    (previous) => ({
-                        ...previous,
-                        [message.userId]: {
-                            userId:
-                                message.userId,
-                            userName:
-                                message.userName ||
-                                "Guest",
-                            color:
-                                message.cursorColor ||
-                                "#6366f1",
-                            x: message.x,
-                            y: message.y,
-                            lastSeen:
-                                Date.now(),
-                        },
-                    })
-                );
-
-                return;
-            }
-
-            if (
-                message.type ===
-                "cursor-leave"
-            ) {
-                setRemoteCursors(
-                    (previous) => {
-                        const next = {
-                            ...previous,
-                        };
-
-                        delete next[
-                            message.userId
-                        ];
-
-                        return next;
-                    }
-                );
-            }
-        };
-
-        socket.on(
-            "whiteboard-event",
-            handleWhiteboardEvent
-        );
-
-        return () => {
-            socket.off(
-                "whiteboard-event",
-                handleWhiteboardEvent
-            );
-        };
-    }, [roomId]);
-
-    /*
-     * REMOVE OLD REMOTE CURSORS
-     */
-    useEffect(() => {
-        const interval = setInterval(() => {
-            setRemoteCursors(
-                (previous) => {
-                    const now = Date.now();
-                    const next = {};
-
-                    Object.values(
-                        previous
-                    ).forEach((cursor) => {
-                        if (
-                            now -
-                                cursor.lastSeen <
-                            5000
-                        ) {
-                            next[
-                                cursor.userId
-                            ] = cursor;
-                        }
-                    });
-
-                    return next;
+                    redraw();
                 }
+            }
+
+            if (
+                message.type ===
+                "whiteboard-state"
+            ) {
+                objectsRef.current =
+                    message.objects ||
+                    [];
+
+                redraw();
+                refresh();
+            }
+
+            if (
+                message.type ===
+                "whiteboard-request-state"
+            ) {
+                channel.postMessage({
+                    type:
+                        "whiteboard-state",
+
+                    objects:
+                        objectsRef.current,
+                });
+            }
+
+            if (
+                message.type ===
+                "code-sync-request"
+            ) {
+                channel.postMessage({
+                    type:
+                        "code-sync",
+
+                    code:
+                        localStorage.getItem(
+                            `syncspace-code-${language}`
+                        ) ||
+                        languageTemplates[
+                            language
+                        ],
+
+                    language,
+                });
+            }
+
+            if (
+                message.type ===
+                "code-sync"
+            ) {
+                setLanguage(
+                    message.language
+                );
+
+                setCode(
+                    message.code
+                );
+
+                setCodeSaved(false);
+            }
+        };
+
+        const handleSocketUsers = (users) => {
+            setActiveUsers(
+                users.map((user) => ({
+                    ...user,
+                    self: user.userId === currentUser.id,
+                }))
             );
-        }, 2000);
+        };
+
+        const joinSocketRoom = () => {
+            socket.emit("join-room", roomId);
+        };
+
+        socket.on("room-users", handleSocketUsers);
+        socket.on("connect", joinSocketRoom);
+        if (!socket.connected) {
+            socket.connect();
+        } else {
+            joinSocketRoom();
+        }
+
+        channel.postMessage({
+            type:
+                "whiteboard-request-state",
+        });
+
+        sessionStorage.setItem("syncspace_user_id", currentUser.id);
+        const presenceUser = {
+            id: currentUser.id,
+            name: currentUser.name,
+            role: currentUser.role,
+        };
+
+        channel.postMessage({ type: "presence-join", user: presenceUser });
+        const presenceInterval = window.setInterval(() => {
+            channel.postMessage({ type: "presence-ping", user: presenceUser });
+        }, 10000);
+
+        channel.postMessage({
+            type:
+                "code-sync-request",
+        });
 
         return () => {
-            clearInterval(interval);
+            channel.postMessage({ type: "presence-leave", userId: currentUser.id });
+            window.clearInterval(presenceInterval);
+            socket.off("room-users", handleSocketUsers);
+            socket.off("connect", joinSocketRoom);
+            socket.disconnect();
+            channel.close();
+            channelRef.current =
+                null;
         };
+    }, [
+        roomId,
+        redraw,
+        refresh,
+        language,
+        currentUser,
+    ]);
+
+    // =====================================================
+    // INITIAL HISTORY
+    // =====================================================
+
+    useEffect(() => {
+        if (
+            historyRef.current
+                .length === 0
+        ) {
+            historyRef.current = [
+                [],
+            ];
+
+            historyIndexRef.current =
+                0;
+        }
     }, []);
 
-    /*
-     * KEYBOARD SHORTCUTS
-     */
+    // =====================================================
+    // REDRAW
+    // =====================================================
+
     useEffect(() => {
-        const handleKeyboard = (event) => {
-            const target =
-                event.target;
+        redraw();
+    }, [
+        selectedObjectId,
+        historyVersion,
+        redraw,
+    ]);
+
+    // =====================================================
+    // KEYBOARD SHORTCUTS
+    // =====================================================
+
+    useEffect(() => {
+        const handleKeyboard = (
+            event
+        ) => {
+            const tag =
+                document.activeElement
+                    ?.tagName;
 
             if (
-                target &&
-                (
-                    target.tagName === "INPUT" ||
-                    target.tagName === "TEXTAREA" ||
-                    target.tagName === "SELECT"
-                )
+                tag === "INPUT" ||
+                tag === "TEXTAREA"
             ) {
+                if (
+                    event.key ===
+                    "Escape"
+                ) {
+                    setTextEditor(null);
+                    setStickyEditor(null);
+                }
+
                 return;
             }
 
             if (
                 event.ctrlKey &&
-                event.key.toLowerCase() === "z"
+                event.key.toLowerCase() ===
+                    "z"
             ) {
                 event.preventDefault();
-
-                if (event.shiftKey) {
-                    redo();
-                } else {
-                    undo();
-                }
-
+                undo();
                 return;
             }
 
-            const shortcut =
-                event.key.toLowerCase();
-
-            const found =
-                TOOLS.find(
-                    (item) =>
-                        item.key.toLowerCase() ===
-                        shortcut
-                );
-
-            if (found) {
+            if (
+                event.ctrlKey &&
+                event.key.toLowerCase() ===
+                    "y"
+            ) {
                 event.preventDefault();
-                setTool(found.id);
+                redo();
+                return;
             }
 
-            if (event.key === "?") {
-                setShowHelp(
-                    (previous) => !previous
-                );
+            if (
+                event.key ===
+                    "Delete" ||
+                event.key ===
+                    "Backspace"
+            ) {
+                deleteSelected();
+                return;
+            }
+
+            switch (
+                event.key.toLowerCase()
+            ) {
+                case "v":
+                    setTool("select");
+                    break;
+
+                case "p":
+                    setTool("draw");
+                    break;
+
+                case "e":
+                    setTool("eraser");
+                    break;
+
+                case "t":
+                    setTool("text");
+                    break;
+
+                case "l":
+                    setTool("line");
+                    break;
+
+                case "a":
+                    setTool("arrow");
+                    break;
+
+                case "r":
+                    setTool("rectangle");
+                    break;
+
+                case "c":
+                    setTool("circle");
+                    break;
+
+                case "3":
+                    setTool("triangle");
+                    break;
+
+                case "s":
+                    setTool("sticky");
+                    break;
+
+                default:
+                    break;
             }
         };
 
@@ -645,752 +1976,878 @@ function Whiteboard({ roomId, userName }) {
             handleKeyboard
         );
 
-        return () => {
+        return () =>
             window.removeEventListener(
                 "keydown",
                 handleKeyboard
             );
-        };
-    }, [setTool]);
+    }, [
+        undo,
+        redo,
+        deleteSelected,
+        setTool,
+    ]);
 
-    /*
-     * DRAWING
-     */
-    const startDrawing = (event) => {
-        if (tool === "text") return;
+    // =====================================================
+    // CODE EDITOR
+    // =====================================================
 
-        event.currentTarget.setPointerCapture?.(
-            event.pointerId
-        );
+    const updateCode = (event) => {
+        const nextCode =
+            event.target.value;
 
-        const point = getPosition(event);
+        setCode(nextCode);
 
-        drawingRef.current = true;
-
-        saveHistory();
-
-        if (
-            tool === "line" ||
-            tool === "arrow" ||
-            tool === "rectangle" ||
-            tool === "circle"
-        ) {
-            currentItemRef.current = {
-                id: createId(),
-                type: tool,
-                color,
-                width: lineWidth,
-                points: [
-                    point,
-                    point,
-                ],
-            };
-
-            redraw();
-
-            return;
-        }
-
-        currentItemRef.current = {
-            id: createId(),
-            type: "stroke",
-            tool,
-            color,
-            width: lineWidth,
-            points: [point],
-        };
-
-        redraw();
-    };
-
-    const draw = (event) => {
-        if (!roomId) return;
-
-        const now = Date.now();
-
-        if (
-            now -
-                lastCursorPublishRef.current >
-            40
-        ) {
-            const point =
-                getPosition(event);
-
-            publish({
-                type: "cursor-move",
-                x: point.x,
-                y: point.y,
-            });
-
-            lastCursorPublishRef.current =
-                now;
-        }
-
-        if (!drawingRef.current) {
-            return;
-        }
-
-        const point = getPosition(event);
-
-        const item =
-            currentItemRef.current;
-
-        if (!item) return;
-
-        if (
-            item.type === "line" ||
-            item.type === "arrow" ||
-            item.type === "rectangle" ||
-            item.type === "circle"
-        ) {
-            item.points[1] = point;
-
-            redraw();
-
-            return;
-        }
-
-        item.points.push(point);
-
-        redraw();
-    };
-
-    const stopDrawing = (event) => {
-        if (!drawingRef.current) {
-            return;
-        }
-
-        const item =
-            currentItemRef.current;
-
-        if (
-            item &&
-            (
-                item.points.length > 1 ||
-                item.type !== "stroke"
-            )
-        ) {
-            strokesRef.current.push(item);
-
-            publish({
-                type: "whiteboard-item",
-                item,
-            });
-        }
-
-        drawingRef.current = false;
-        currentItemRef.current = null;
-
-        redraw();
-
-        event?.currentTarget.releasePointerCapture?.(
-            event.pointerId
-        );
-    };
-
-    /*
-     * TEXT
-     */
-    const openTextEditor = (event) => {
-        if (
-            tool !== "text" ||
-            textEditor
-        ) {
-            return;
-        }
-
-        const point =
-            getPosition(event);
-
-        setTextEditor({
-            ...point,
-            value: "",
-        });
-    };
-
-    const commitText = () => {
-        if (
-            !textEditor?.value.trim()
-        ) {
-            setTextEditor(null);
-            return;
-        }
-
-        saveHistory();
-
-        const item = {
-            id: createId(),
-            type: "text",
-            color,
-            width: textSize,
-            text:
-                textEditor.value.trim(),
-            points: [
-                {
-                    x: textEditor.x,
-                    y: textEditor.y,
-                },
-            ],
-        };
-
-        strokesRef.current.push(item);
+        setCodeSaved(false);
 
         publish({
-            type: "whiteboard-item",
-            item,
+            type: "code-sync",
+            code: nextCode,
+            language,
         });
-
-        setTextEditor(null);
-
-        redraw();
     };
 
-    /*
-     * COPY ROOM LINK
-     */
-    const copyRoomLink = async () => {
-        const link =
-            `${window.location.origin}/room/${roomId}`;
+    const changeLanguage = (
+        event
+    ) => {
+        const nextLanguage =
+            event.target.value;
+
+        const savedCode =
+            localStorage.getItem(
+                `syncspace-code-${nextLanguage}`
+            );
+
+        const nextCode =
+            savedCode ||
+            languageTemplates[
+                nextLanguage
+            ];
+
+        setLanguage(
+            nextLanguage
+        );
+
+        setCode(nextCode);
+
+        setCodeSaved(false);
+
+        publish({
+            type: "code-sync",
+            code: nextCode,
+            language:
+                nextLanguage,
+        });
+    };
+
+    const saveCode = () => {
+        localStorage.setItem(
+            `syncspace-code-${language}`,
+            code
+        );
+
+        setCodeSaved(true);
+    };
+
+    // =====================================================
+    // TOOL BUTTON
+    // =====================================================
+
+    const ToolButton = ({
+        name,
+        icon,
+        label,
+        shortcut,
+    }) => (
+        <button
+            type="button"
+            className={
+                tool === name
+                    ? "tool active"
+                    : "tool"
+            }
+            onClick={() =>
+                setTool(name)
+            }
+            title={`${label} (${shortcut})`}
+        >
+            <span>{icon}</span>
+            <small>
+                {label}
+            </small>
+        </button>
+    );
+
+    // =====================================================
+    // SHARE
+    // =====================================================
+
+    const shareRoom = async () => {
+        const shareText =
+            `Join my SyncSpace workspace. Room ID: ${roomId}`;
 
         try {
             await navigator.clipboard.writeText(
-                link
+                shareText
             );
 
-            setCopied(true);
-
-            setTimeout(() => {
-                setCopied(false);
-            }, 1800);
+            alert(
+                "Room invite copied!"
+            );
         } catch {
-            window.prompt(
-                "Copy this room link:",
-                link
+            alert(
+                `Room ID: ${roomId}`
             );
         }
     };
 
-    const remoteCount =
-        Object.keys(remoteCursors).length;
+    useEffect(() => {
+        const resizeCodePanel = (event) => {
+            if (!codeResizeRef.current) return;
+            const nextWidth = window.innerWidth - event.clientX;
+            setCodePanelWidth(Math.min(760, Math.max(320, nextWidth)));
+        };
 
-    const displayName =
-        userName ||
-        localStorage.getItem(
-            "syncspace_name"
-        ) ||
-        "Guest";
+        const stopResizingCode = () => {
+            codeResizeRef.current = false;
+            document.body.style.cursor = "";
+        };
+
+        window.addEventListener("pointermove", resizeCodePanel);
+        window.addEventListener("pointerup", stopResizingCode);
+        return () => {
+            window.removeEventListener("pointermove", resizeCodePanel);
+            window.removeEventListener("pointerup", stopResizingCode);
+        };
+    }, []);
+
+    // =====================================================
+    // UI
+    // =====================================================
 
     return (
         <div className="syncspace">
-            {/* =====================================
+
+            {/* =================================================
                 TOP BAR
-            ====================================== */}
+            ================================================= */}
 
             <header className="topbar">
+
                 <div className="brand">
-                    <div className="brand-mark">
+
+                    <div className="brand-icon">
                         S
                     </div>
 
-                    <div className="brand-copy">
-                        <div className="brand-name">
-                            Sync<span>Space</span>
-                        </div>
+                    <div className="brand-info">
+                        <h1>
+                            SyncSpace
+                        </h1>
 
-                        <div className="brand-tagline">
-                            INTERVIEW WORKSPACE
-                        </div>
+                        <span>
+                            Interview workspace
+                        </span>
                     </div>
+
                 </div>
 
-                <div className="workspace-title">
-                    <span className="workspace-title-dot" />
-                    Collaborative Whiteboard
+                <div className="workspace-info">
 
-                    <span className="live-pill">
-                        <span />
+                    <div className="workspace-title">
+                        <span>
+                            Collaborative Whiteboard
+                        </span>
+                    </div>
+
+                    <div className="connection">
+                        <span className="connection-dot" />
                         Live workspace
-                    </span>
+                    </div>
+
                 </div>
 
-                <div className="topbar-right">
-                    <div className="online-users">
+                <div className="top-actions">
+
+                    <button
+                        type="button"
+                        className="active-users active-users-button"
+                        aria-label={`${activeUsers.length} active users`}
+                        aria-expanded={showUserRoster}
+                        onClick={() => setShowUserRoster((value) => !value)}
+                    >
                         <div className="avatar-stack">
-                            <span className="avatar primary">
-                                {displayName
-                                    .charAt(0)
-                                    .toUpperCase()}
-                            </span>
-
-                            {remoteCount > 0 &&
-                                Array.from({
-                                    length:
-                                        Math.min(
-                                            remoteCount,
-                                            3
-                                        ),
-                                }).map(
-                                    (_, index) => (
-                                        <span
-                                            className="avatar"
-                                            key={
-                                                index
-                                            }
-                                        >
-                                            {String.fromCharCode(
-                                                65 +
-                                                    index
-                                            )}
-                                        </span>
-                                    )
-                                )}
+                            {activeUsers.slice(0, 4).map((user, index) => (
+                                <span
+                                    className={`user-avatar avatar-${index % 4}`}
+                                    key={user.id}
+                                    title={`${user.name} · ${user.role}`}
+                                >
+                                    {user.name.slice(0, 1).toUpperCase()}
+                                </span>
+                            ))}
                         </div>
+                        <span>{activeUsers.length} active</span>
+                    </button>
 
+                    {showUserRoster && (
+                        <div className="user-roster" role="dialog" aria-label="Active users">
+                            <div className="user-roster-heading">
+                                <strong>In this workspace</strong>
+                                <span>{activeUsers.length} online</span>
+                            </div>
+                            {activeUsers.map((user, index) => (
+                                <div className="roster-user" key={user.id}>
+                                    <span className={`roster-avatar avatar-${index % 4}`}>
+                                        {user.name.slice(0, 1).toUpperCase()}
+                                    </span>
+                                    <span>
+                                        <strong>{user.name}{user.self ? " (you)" : ""}</strong>
+                                        <small>{user.role}</small>
+                                    </span>
+                                    <i />
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    <div className="room-id-display">
                         <span>
-                            {remoteCount + 1} online
+                            Room
                         </span>
+
+                        <strong>
+                            {roomId}
+                        </strong>
                     </div>
 
                     <button
                         type="button"
-                        className="room-button"
+                        className="share-btn"
                         onClick={
-                            copyRoomLink
-                        }
-                        title="Copy room link"
-                    >
-                        <span>
-                            ROOM
-                        </span>
-
-                        {roomId ||
-                            "ROOM"}
-                    </button>
-
-                    <button
-                        type="button"
-                        className="share-button"
-                        onClick={
-                            copyRoomLink
+                            shareRoom
                         }
                     >
-                        {copied
-                            ? "✓ Copied"
-                            : "↗ Share"}
+                        ↗ Share
                     </button>
+
                 </div>
+
             </header>
 
-            {/* =====================================
-                WORKSPACE
-            ====================================== */}
+            {/* =================================================
+                MAIN WORKSPACE
+            ================================================= */}
 
             <main className="workspace">
-                {/* =================================
-                    TOOL PANEL
-                ================================== */}
+
+                {/* =================================================
+                    TOOLBAR
+                ================================================= */}
 
                 <aside className="tool-panel">
-                    <div className="tool-panel-label">
-                        TOOLS
-                    </div>
 
-                    <div className="tool-list">
-                        {TOOLS.map((item) => (
-                            <button
-                                type="button"
-                                key={item.id}
-                                className={`tool-button ${
-                                    tool === item.id
-                                        ? "selected"
-                                        : ""
-                                }`}
-                                onClick={() =>
-                                    setTool(
-                                        item.id
-                                    )
-                                }
-                                title={`${item.label} (${item.key})`}
-                            >
-                                <span className="tool-icon">
-                                    {item.icon}
-                                </span>
-
-                                <span className="tool-label">
-                                    {item.label}
-                                </span>
-
-                                <span className="tool-key">
-                                    {item.key}
-                                </span>
-                            </button>
-                        ))}
+                    <div className="workspace-modes" aria-label="Workspace pages">
+                        <button
+                            type="button"
+                            className={!isCodeOpen ? "mode-button active" : "mode-button"}
+                            onClick={() => setIsCodeOpen(false)}
+                            title="Canvas page"
+                        >
+                            <span>▦</span>
+                            <small>Canvas</small>
+                        </button>
+                        <button
+                            type="button"
+                            className={isCodeOpen ? "mode-button active" : "mode-button"}
+                            onClick={() => setIsCodeOpen(true)}
+                            title="Open code page"
+                        >
+                            <span>&lt;/&gt;</span>
+                            <small>Code</small>
+                        </button>
                     </div>
 
                     <div className="tool-divider" />
 
-                    <button
-                        type="button"
-                        className="side-action"
-                        onClick={undo}
-                        disabled={
-                            strokesRef.current
-                                .length === 0
-                        }
-                        title="Undo (Ctrl + Z)"
-                    >
-                        ↶
-                    </button>
+                    <div className="tool-section">
 
-                    <button
-                        type="button"
-                        className="side-action"
-                        onClick={redo}
-                        disabled={
-                            redoStackRef.current
-                                .length === 0
-                        }
-                        title="Redo (Ctrl + Shift + Z)"
-                    >
-                        ↷
-                    </button>
+                        <ToolButton
+                            name="select"
+                            icon="↖"
+                            label="Select"
+                            shortcut="V"
+                        />
 
-                    <button
-                        type="button"
-                        className="side-action danger"
-                        onClick={clearBoard}
-                        title="Clear board"
-                    >
-                        ⌫
-                    </button>
+                        <ToolButton
+                            name="draw"
+                            icon="✎"
+                            label="Pen"
+                            shortcut="P"
+                        />
 
-                    <div className="tool-spacer" />
+                        <ToolButton
+                            name="eraser"
+                            icon="◇"
+                            label="Eraser"
+                            shortcut="E"
+                        />
 
-                    <button
-                        type="button"
-                        className="help-button"
-                        onClick={() =>
-                            setShowHelp(
-                                (previous) =>
-                                    !previous
-                            )
-                        }
-                        title="Keyboard shortcuts"
-                    >
-                        ?
-                    </button>
+                    </div>
+
+                    <div className="tool-divider" />
+
+                    <div className="tool-section">
+
+                        <ToolButton
+                            name="line"
+                            icon="╱"
+                            label="Line"
+                            shortcut="L"
+                        />
+
+                        <ToolButton
+                            name="arrow"
+                            icon="➜"
+                            label="Arrow"
+                            shortcut="A"
+                        />
+
+                        <ToolButton
+                            name="rectangle"
+                            icon="□"
+                            label="Rect"
+                            shortcut="R"
+                        />
+
+                        <ToolButton
+                            name="circle"
+                            icon="○"
+                            label="Circle"
+                            shortcut="C"
+                        />
+
+                        <ToolButton
+                            name="triangle"
+                            icon="△"
+                            label="Triangle"
+                            shortcut="3"
+                        />
+
+                    </div>
+
+                    <div className="tool-divider" />
+
+                    <div className="tool-section">
+
+                        <ToolButton
+                            name="text"
+                            icon="T"
+                            label="Text"
+                            shortcut="T"
+                        />
+
+                        <ToolButton
+                            name="sticky"
+                            icon="▣"
+                            label="Sticky"
+                            shortcut="S"
+                        />
+
+                    </div>
+
+                    <div className="tool-divider" />
+
+                    <div className="tool-section">
+
+                        <button
+                            type="button"
+                            className="tool code-tool"
+                            onClick={() => setIsCodeOpen(true)}
+                            title="Open and resize code editor"
+                        >
+                            <span>&lt;/&gt;</span>
+                            <small>Editor</small>
+                        </button>
+
+                        <button
+                            type="button"
+                            className="tool"
+                            onClick={
+                                undo
+                            }
+                            title="Undo (Ctrl + Z)"
+                        >
+                            <span>
+                                ↶
+                            </span>
+
+                            <small>
+                                Undo
+                            </small>
+                        </button>
+
+                        <button
+                            type="button"
+                            className="tool"
+                            onClick={
+                                redo
+                            }
+                            title="Redo (Ctrl + Y)"
+                        >
+                            <span>
+                                ↷
+                            </span>
+
+                            <small>
+                                Redo
+                            </small>
+                        </button>
+
+                        <button
+                            type="button"
+                            className="tool"
+                            onClick={
+                                deleteSelected
+                            }
+                            title="Delete selected"
+                        >
+                            <span>
+                                ⌫
+                            </span>
+
+                            <small>
+                                Delete
+                            </small>
+                        </button>
+
+                    </div>
+
+                    <div className="tool-divider" />
+
+                    <div className="tool-section">
+
+                        <button
+                            type="button"
+                            className={
+                                showGrid
+                                    ? "tool active"
+                                    : "tool"
+                            }
+                            onClick={
+                                toggleGrid
+                            }
+                        >
+                            <span>
+                                ▦
+                            </span>
+
+                            <small>
+                                Grid
+                            </small>
+                        </button>
+
+                        <button
+                            type="button"
+                            className="tool danger"
+                            onClick={
+                                clearBoard
+                            }
+                        >
+                            <span>
+                                🗑
+                            </span>
+
+                            <small>
+                                Erase page
+                            </small>
+                        </button>
+
+                    </div>
+
                 </aside>
 
-                {/* =================================
-                    CANVAS
-                ================================== */}
+                {/* =================================================
+                    CANVAS AREA
+                ================================================= */}
 
-                <section className="canvas-section">
-                    <div className="canvas-header">
-                        <div>
-                            <div className="canvas-kicker">
-                                SHARED CANVAS
-                            </div>
+                <section
+                    className={
+                        showGrid
+                            ? "canvas-area grid"
+                            : "canvas-area"
+                    }
+                >
 
-                            <div className="canvas-heading">
-                                Whiteboard
-                            </div>
-                        </div>
+                    <div
+                        className="canvas-container"
+                        style={{
+                            transform:
+                                `scale(${zoom})`,
+                        }}
+                    >
 
-                        <div className="canvas-actions">
-                            <span className="connection-status">
-                                <span />
-                                Connected
-                            </span>
+                        <canvas
+                            ref={
+                                canvasRef
+                            }
+                            className="whiteboard-canvas"
+                            onPointerDown={
+                                startDrawing
+                            }
+                            onPointerMove={
+                                moveDrawing
+                            }
+                            onPointerUp={
+                                stopDrawing
+                            }
+                            onPointerCancel={
+                                stopDrawing
+                            }
+                        />
 
-                            <span className="room-chip">
-                                #{roomId || "room"}
-                            </span>
-                        </div>
                     </div>
 
-                    <div className="canvas-area">
-                        <div className="canvas-wrapper">
-                            <div className="canvas-grid" />
+                    {/* TEXT EDITOR */}
 
-                            <div className="live-badge">
-                                <span className="live-dot" />
-                                Live canvas
-                            </div>
+                    {textEditor && (
+                        <input
+                            autoFocus
+                            className="text-editor"
+                            style={{
+                                left:
+                                    textEditor.x *
+                                    zoom,
 
-                            <div className="canvas-hint">
-                                <strong>
-                                    {tool === "select"
-                                        ? "Select tool"
-                                        : `${tool.charAt(0).toUpperCase()}${tool.slice(1)} tool`}
-                                </strong>
+                                top:
+                                    textEditor.y *
+                                        zoom -
+                                    textSize,
 
-                                <span>
-                                    Draw and collaborate in
-                                    real time
-                                </span>
-                            </div>
+                                fontSize:
+                                    textSize,
 
-                            <canvas
-                                ref={canvasRef}
-                                className={`drawing-canvas cursor-${tool}`}
-                                onPointerDown={
-                                    startDrawing
-                                }
-                                onPointerMove={
-                                    draw
-                                }
-                                onPointerUp={
-                                    stopDrawing
-                                }
-                                onPointerCancel={
-                                    stopDrawing
-                                }
-                                onPointerLeave={() => {
-                                    publish({
-                                        type:
-                                            "cursor-leave",
-                                    });
-                                }}
-                                onClick={
-                                    openTextEditor
-                                }
-                            />
-
-                            {/* REMOTE CURSORS */}
-
-                            {Object.values(
-                                remoteCursors
-                            ).map(
-                                (cursor) => (
-                                    <div
-                                        key={
-                                            cursor.userId
-                                        }
-                                        className="remote-cursor"
-                                        style={{
-                                            left:
-                                                cursor.x,
-                                            top:
-                                                cursor.y,
-                                            "--cursor-color":
-                                                cursor.color,
-                                        }}
-                                    >
-                                        <div className="cursor-pointer">
-                                            ◆
-                                        </div>
-
-                                        <div className="cursor-label">
-                                            {
-                                                cursor.userName
-                                            }
-                                        </div>
-                                    </div>
-                                )
-                            )}
-
-                            {/* TEXT INPUT */}
-
-                            {textEditor && (
-                                <div
-                                    className="canvas-text-editor"
-                                    style={{
-                                        left:
-                                            textEditor.x,
-                                        top:
-                                            textEditor.y -
-                                            textSize,
-                                    }}
-                                >
-                                    <input
-                                        autoFocus
-                                        value={
-                                            textEditor.value
-                                        }
-                                        placeholder="Type your text..."
-                                        style={{
-                                            fontSize:
-                                                textSize,
-                                        }}
-                                        onPointerDown={(
-                                            event
-                                        ) =>
-                                            event.stopPropagation()
-                                        }
-                                        onChange={(
-                                            event
-                                        ) =>
-                                            setTextEditor(
-                                                {
-                                                    ...textEditor,
-                                                    value:
-                                                        event
-                                                            .target
-                                                            .value,
-                                                }
-                                            )
-                                        }
-                                        onBlur={
-                                            commitText
-                                        }
-                                        onKeyDown={(
-                                            event
-                                        ) => {
-                                            if (
-                                                event.key ===
-                                                "Enter"
-                                            ) {
-                                                commitText();
-                                            }
-
-                                            if (
-                                                event.key ===
-                                                "Escape"
-                                            ) {
-                                                setTextEditor(
-                                                    null
-                                                );
-                                            }
-                                        }}
-                                    />
-                                </div>
-                            )}
-
-                            {/* SHORTCUT HELP */}
-
-                            {showHelp && (
-                                <div className="shortcut-panel">
-                                    <div className="shortcut-header">
-                                        <div>
-                                            <span>
-                                                SHORTCUTS
-                                            </span>
-
-                                            <strong>
-                                                Keyboard controls
-                                            </strong>
-                                        </div>
-
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                setShowHelp(
-                                                    false
-                                                )
-                                            }
-                                        >
-                                            ×
-                                        </button>
-                                    </div>
-
-                                    <div className="shortcut-grid">
-                                        {TOOLS.map(
-                                            (
-                                                item
-                                            ) => (
-                                                <div
-                                                    key={
-                                                        item.id
-                                                    }
-                                                >
-                                                    <kbd>
-                                                        {
-                                                            item.key
-                                                        }
-                                                    </kbd>
-
-                                                    <span>
-                                                        {
-                                                            item.label
-                                                        }
-                                                    </span>
-                                                </div>
-                                            )
-                                        )}
-
-                                        <div>
-                                            <kbd>
-                                                Ctrl Z
-                                            </kbd>
-
-                                            <span>
-                                                Undo
-                                            </span>
-                                        </div>
-
-                                        <div>
-                                            <kbd>
-                                                Ctrl ⇧ Z
-                                            </kbd>
-
-                                            <span>
-                                                Redo
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* =================================
-                        BOTTOM CONTROLS
-                    ================================== */}
-
-                    <footer className="bottom-bar">
-                        <div className="bottom-group">
-                            <span className="bottom-label">
-                                Color
-                            </span>
-
-                            <input
-                                className="color-picker"
-                                type="color"
-                                value={color}
-                                onChange={(event) =>
-                                    setColor(
-                                        event.target.value
-                                    )
-                                }
-                                title="Choose color"
-                            />
-
-                            <span className="color-value">
-                                {color.toUpperCase()}
-                            </span>
-                        </div>
-
-                        <div className="bottom-separator" />
-
-                        <div className="bottom-group slider-group">
-                            <span className="bottom-label">
-                                Brush
-                            </span>
-
-                            <input
-                                type="range"
-                                min="1"
-                                max="30"
-                                value={lineWidth}
-                                onChange={(event) =>
-                                    setLineWidth(
-                                        Number(
+                                color,
+                            }}
+                            value={
+                                textEditor.value
+                            }
+                            placeholder="Type text..."
+                            onChange={(
+                                event
+                            ) =>
+                                setTextEditor(
+                                    {
+                                        ...textEditor,
+                                        value:
                                             event
                                                 .target
-                                                .value
-                                        )
+                                                .value,
+                                    }
+                                )
+                            }
+                            onBlur={
+                                commitText
+                            }
+                            onKeyDown={(
+                                event
+                            ) => {
+                                if (
+                                    event.key ===
+                                    "Enter"
+                                ) {
+                                    commitText();
+                                }
+
+                                if (
+                                    event.key ===
+                                    "Escape"
+                                ) {
+                                    setTextEditor(
+                                        null
+                                    );
+                                }
+                            }}
+                        />
+                    )}
+
+                    {/* STICKY EDITOR */}
+
+                    {stickyEditor && (
+                        <div
+                            className="sticky-editor"
+                            style={{
+                                left:
+                                    stickyEditor.x *
+                                    zoom,
+
+                                top:
+                                    stickyEditor.y *
+                                    zoom,
+                            }}
+                        >
+                            <textarea
+                                autoFocus
+                                placeholder="Write an interview note..."
+                                value={
+                                    stickyEditor.value
+                                }
+                                onChange={(
+                                    event
+                                ) =>
+                                    setStickyEditor(
+                                        {
+                                            ...stickyEditor,
+                                            value:
+                                                event
+                                                    .target
+                                                    .value,
+                                        }
                                     )
                                 }
                             />
 
-                            <span className="slider-value">
-                                {lineWidth}px
-                            </span>
+                            <div className="sticky-actions">
+
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setStickyEditor(
+                                            null
+                                        )
+                                    }
+                                >
+                                    Cancel
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={
+                                        commitSticky
+                                    }
+                                >
+                                    Add note
+                                </button>
+
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="live-badge">
+                        <span />
+                        Live canvas
+                    </div>
+
+                    {/* =================================================
+                        CODE EDITOR
+                    ================================================= */}
+
+                    {isCodeOpen && <section className="floating-code-editor" style={{ width: `${codePanelWidth}px` }} aria-label="Code editor">
+
+                        <button
+                            type="button"
+                            className="code-resize-handle"
+                            onPointerDown={() => {
+                                codeResizeRef.current = true;
+                                document.body.style.cursor = "col-resize";
+                            }}
+                            title="Drag to resize code panel"
+                            aria-label="Resize code panel"
+                        >
+                            <span>⟷</span>
+                        </button>
+
+                        <div className="floating-code-header">
+
+                            <div>
+                                <span>
+                                    CODE
+                                </span>
+
+                                <strong>
+                                    Interview Editor
+                                </strong>
+                            </div>
+
+                            <div className="code-actions">
+
+                                <button
+                                    type="button"
+                                    className="code-close"
+                                    onClick={() => setIsCodeOpen(false)}
+                                    title="Close code editor"
+                                    aria-label="Close code editor"
+                                >
+                                    ×
+                                </button>
+
+                                <select
+                                    value={
+                                        language
+                                    }
+                                    onChange={
+                                        changeLanguage
+                                    }
+                                >
+                                    <option>
+                                        JavaScript
+                                    </option>
+
+                                    <option>
+                                        TypeScript
+                                    </option>
+
+                                    <option>
+                                        Python
+                                    </option>
+
+                                    <option>
+                                        JSON
+                                    </option>
+                                </select>
+
+                                <button
+                                    type="button"
+                                    onClick={
+                                        saveCode
+                                    }
+                                >
+                                    {codeSaved
+                                        ? "✓ Saved"
+                                        : "Save"}
+                                </button>
+
+                            </div>
+
                         </div>
 
-                        <div className="bottom-group slider-group">
-                            <span className="bottom-label">
+                        <div className="code-status">
+
+                            <span />
+
+                            Shared coding panel
+
+                            <b>
+                                {language}
+                            </b>
+
+                        </div>
+
+                        <div className="code-body">
+
+                            <div
+                                className="code-lines"
+                                aria-hidden="true"
+                            >
+                                {code
+                                    .split(
+                                        "\n"
+                                    )
+                                    .map(
+                                        (
+                                            _,
+                                            index
+                                        ) => (
+                                            <span
+                                                key={
+                                                    index
+                                                }
+                                            >
+                                                {index +
+                                                    1}
+                                            </span>
+                                        )
+                                    )}
+                            </div>
+
+                            <textarea
+                                value={
+                                    code
+                                }
+                                onChange={
+                                    updateCode
+                                }
+                                spellCheck="false"
+                                aria-label="Shared code editor"
+                            />
+
+                        </div>
+
+                    </section>}
+
+                </section>
+
+            </main>
+
+            {/* =================================================
+                BOTTOM BAR
+            ================================================= */}
+
+            <footer className="bottom-bar">
+
+                <div className="bottom-left">
+
+                    <div className="setting">
+
+                        <span>
+                            Color
+                        </span>
+
+                        <input
+                            type="color"
+                            value={
+                                color
+                            }
+                            onChange={(
+                                event
+                            ) =>
+                                setColor(
+                                    event
+                                        .target
+                                        .value
+                                )
+                            }
+                        />
+
+                    </div>
+
+                    <div className="setting brush-setting">
+
+                        <span>
+                            Brush
+                        </span>
+
+                        <input
+                            type="range"
+                            min="1"
+                            max="30"
+                            value={
+                                brushSize
+                            }
+                            onChange={(
+                                event
+                            ) =>
+                                setBrushSize(
+                                    Number(
+                                        event
+                                            .target
+                                            .value
+                                    )
+                                )
+                            }
+                        />
+
+                        <b>
+                            {brushSize}px
+                        </b>
+
+                    </div>
+
+                    {tool ===
+                        "text" && (
+                        <div className="setting brush-setting">
+
+                            <span>
                                 Text
                             </span>
 
@@ -1398,8 +2855,12 @@ function Whiteboard({ roomId, userName }) {
                                 type="range"
                                 min="12"
                                 max="64"
-                                value={textSize}
-                                onChange={(event) =>
+                                value={
+                                    textSize
+                                }
+                                onChange={(
+                                    event
+                                ) =>
                                     setTextSize(
                                         Number(
                                             event
@@ -1410,43 +2871,52 @@ function Whiteboard({ roomId, userName }) {
                                 }
                             />
 
-                            <span className="slider-value">
+                            <b>
                                 {textSize}px
-                            </span>
+                            </b>
+
                         </div>
+                    )}
 
-                        <div className="bottom-spacer" />
+                </div>
 
-                        <div className="board-info">
-                            <span className="board-info-dot" />
-                            Changes sync automatically
-                        </div>
+                <div className="zoom-control">
 
-                        <button
-                            type="button"
-                            className="zoom-button"
-                            onClick={() =>
-                                setShowHelp(
-                                    (previous) =>
-                                        !previous
-                                )
-                            }
-                        >
-                            ?
-                        </button>
-                    </footer>
-                </section>
+                    <button
+                        type="button"
+                        onClick={
+                            zoomOut
+                        }
+                    >
+                        −
+                    </button>
 
-                {/* =================================
-                    CODE EDITOR
-                ================================== */}
+                    <button
+                        type="button"
+                        className="zoom-percent"
+                        onClick={
+                            resetZoom
+                        }
+                    >
+                        {Math.round(
+                            zoom * 100
+                        )}
+                        %
+                    </button>
 
-                <section className="editor-section">
-                    <CodeEditor
-                        roomId={roomId}
-                    />
-                </section>
-            </main>
+                    <button
+                        type="button"
+                        onClick={
+                            zoomIn
+                        }
+                    >
+                        +
+                    </button>
+
+                </div>
+
+            </footer>
+
         </div>
     );
 }
