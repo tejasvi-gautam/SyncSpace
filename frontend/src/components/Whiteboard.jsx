@@ -10,11 +10,19 @@ function Whiteboard({ roomId, userName }) {
     const drawingRef = useRef(false);
     const currentItemRef = useRef(null);
     const strokesRef = useRef([]);
+    const historyRef = useRef({
+        past: [],
+        future: [],
+    });
     const viewportRef = useRef({
         x: 0,
         y: 0,
         zoom: 1,
     });
+
+    const [shapeMenuOpen, setShapeMenuOpen] = useState(false);
+    const [isPanning, setIsPanning] = useState(false);
+    const panStartRef = useRef({ x: 0, y: 0 });
 
     // ==========================================
     // ZUSTAND STATE
@@ -99,6 +107,110 @@ function Whiteboard({ roomId, userName }) {
     };
 
     // ==========================================
+    // UNDO / REDO
+    // ==========================================
+
+    const saveHistory = () => {
+        historyRef.current.past.push(
+            JSON.parse(JSON.stringify(strokesRef.current))
+        );
+        historyRef.current.future = [];
+    };
+
+    const undo = () => {
+        if (historyRef.current.past.length === 0) return;
+
+        historyRef.current.future.push(
+            JSON.parse(JSON.stringify(strokesRef.current))
+        );
+        strokesRef.current = historyRef.current.past.pop();
+
+        publish({
+            type: "whiteboard-clear",
+        });
+
+        strokesRef.current.forEach((item) => {
+            publish({
+                type: "whiteboard-item",
+                item,
+            });
+        });
+
+        redraw();
+    };
+
+    const redo = () => {
+        if (historyRef.current.future.length === 0) return;
+
+        historyRef.current.past.push(
+            JSON.parse(JSON.stringify(strokesRef.current))
+        );
+        strokesRef.current = historyRef.current.future.pop();
+
+        publish({
+            type: "whiteboard-clear",
+        });
+
+        strokesRef.current.forEach((item) => {
+            publish({
+                type: "whiteboard-item",
+                item,
+            });
+        });
+
+        redraw();
+    };
+
+    // ==========================================
+    // FIT TO SCREEN
+    // ==========================================
+
+    const fitToScreen = () => {
+        if (strokesRef.current.length === 0) {
+            // Reset to center
+            viewportRef.current.x = 0;
+            viewportRef.current.y = 0;
+            viewportRef.current.zoom = 1;
+            redraw();
+            return;
+        }
+
+        // Find bounding box of all strokes
+        let minX = Infinity, maxX = -Infinity;
+        let minY = Infinity, maxY = -Infinity;
+
+        strokesRef.current.forEach((item) => {
+            if (item.points && item.points.length > 0) {
+                item.points.forEach((point) => {
+                    minX = Math.min(minX, point.x);
+                    maxX = Math.max(maxX, point.x);
+                    minY = Math.min(minY, point.y);
+                    maxY = Math.max(maxY, point.y);
+                });
+            }
+        });
+
+        if (minX === Infinity) return;
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const padding = 40;
+        const contentWidth = maxX - minX + padding * 2;
+        const contentHeight = maxY - minY + padding * 2;
+
+        const scaleX = canvas.width / contentWidth;
+        const scaleY = canvas.height / contentHeight;
+        const scale = Math.min(scaleX, scaleY, 2); // Max zoom 2x
+
+        viewportRef.current.zoom = scale;
+        viewportRef.current.x = -minX * scale + padding;
+        viewportRef.current.y = -minY * scale + padding;
+
+        redraw();
+    };
+
+    // ==========================================
     // VIEWPORT HELPERS
     // ==========================================
 
@@ -160,24 +272,90 @@ function Whiteboard({ roomId, userName }) {
         }
 
         // ======================================
-        // RECTANGLE
+        // RECTANGLE / CIRCLE / SHAPES
         // ======================================
 
-        if (item.type === "rectangle") {
+        if (
+            item.type === "rectangle" ||
+            item.type === "circle" ||
+            item.type === "triangle" ||
+            item.type === "diamond"
+        ) {
             context.globalCompositeOperation = "source-over";
-
             const start = item.points[0];
             const end = item.points[item.points.length - 1];
-
             const width = end.x - start.x;
             const height = end.y - start.y;
 
-            context.strokeRect(
-                start.x,
-                start.y,
-                width,
-                height
+            if (item.type === "rectangle") {
+                context.strokeRect(start.x, start.y, width, height);
+            } else if (item.type === "circle") {
+                const radius = Math.sqrt(width * width + height * height) / 2;
+                context.beginPath();
+                context.arc(start.x + width / 2, start.y + height / 2, radius, 0, Math.PI * 2);
+                context.stroke();
+            } else if (item.type === "triangle") {
+                context.beginPath();
+                context.moveTo(start.x + width / 2, start.y);
+                context.lineTo(start.x, start.y + height);
+                context.lineTo(start.x + width, start.y + height);
+                context.closePath();
+                context.stroke();
+            } else if (item.type === "diamond") {
+                context.beginPath();
+                context.moveTo(start.x + width / 2, start.y);
+                context.lineTo(start.x + width, start.y + height / 2);
+                context.lineTo(start.x + width / 2, start.y + height);
+                context.lineTo(start.x, start.y + height / 2);
+                context.closePath();
+                context.stroke();
+            }
+
+            context.restore();
+            return;
+        }
+
+        // ======================================
+        // LINE
+        // ======================================
+
+        if (item.type === "line") {
+            context.globalCompositeOperation = "source-over";
+            context.beginPath();
+            context.moveTo(item.points[0].x, item.points[0].y);
+            context.lineTo(
+                item.points[item.points.length - 1].x,
+                item.points[item.points.length - 1].y
             );
+            context.stroke();
+            context.restore();
+            return;
+        }
+
+        // ======================================
+        // ARROW
+        // ======================================
+
+        if (item.type === "arrow") {
+            context.globalCompositeOperation = "source-over";
+            const start = item.points[0];
+            const end = item.points[item.points.length - 1];
+            const headlen = 15;
+            const angle = Math.atan2(end.y - start.y, end.x - start.x);
+
+            // Draw line
+            context.beginPath();
+            context.moveTo(start.x, start.y);
+            context.lineTo(end.x, end.y);
+            context.stroke();
+
+            // Draw arrowhead
+            context.beginPath();
+            context.moveTo(end.x, end.y);
+            context.lineTo(end.x - headlen * Math.cos(angle - Math.PI / 6), end.y - headlen * Math.sin(angle - Math.PI / 6));
+            context.moveTo(end.x, end.y);
+            context.lineTo(end.x - headlen * Math.cos(angle + Math.PI / 6), end.y - headlen * Math.sin(angle + Math.PI / 6));
+            context.stroke();
 
             context.restore();
             return;
@@ -288,6 +466,47 @@ function Whiteboard({ roomId, userName }) {
             );
         };
     }, []);
+
+    // ==========================================
+    // KEYBOARD SHORTCUTS
+    // ==========================================
+
+    useEffect(() => {
+        const handleKeyDown = (event) => {
+            // Ctrl+Z or Cmd+Z for undo
+            if ((event.ctrlKey || event.metaKey) && event.key === "z" && !event.shiftKey) {
+                event.preventDefault();
+                undo();
+            }
+            // Ctrl+Y or Cmd+Y for redo, or Ctrl+Shift+Z
+            else if (
+                ((event.ctrlKey || event.metaKey) && (event.key === "y" || (event.key === "z" && event.shiftKey)))
+            ) {
+                event.preventDefault();
+                redo();
+            }
+            // Spacebar for pan mode
+            else if (event.code === "Space") {
+                event.preventDefault();
+                setTool("pan");
+            }
+        };
+
+        const handleKeyUp = (event) => {
+            // Release pan mode when spacebar is released
+            if (event.code === "Space" && tool === "pan") {
+                setTool("draw");
+            }
+        };
+
+        window.addEventListener("keydown", handleKeyDown);
+        window.addEventListener("keyup", handleKeyUp);
+
+        return () => {
+            window.removeEventListener("keydown", handleKeyDown);
+            window.removeEventListener("keyup", handleKeyUp);
+        };
+    }, [tool]);
 
     // ==========================================
     // SOCKET.IO WHITEBOARD CONNECTION
@@ -435,23 +654,36 @@ function Whiteboard({ roomId, userName }) {
     // ==========================================
 
     const startDrawing = (event) => {
-        if (tool === "text") return;
+        if (tool === "text" || tool === "select") return;
+
+        if (tool === "pan") {
+            setIsPanning(true);
+            panStartRef.current = getPosition(event);
+            return;
+        }
 
         event.currentTarget.setPointerCapture?.(
             event.pointerId
         );
 
         const point = getWorldPosition(event);
-
+        saveHistory();
         drawingRef.current = true;
 
         // ======================================
-        // RECTANGLE
+        // SHAPES
         // ======================================
 
-        if (tool === "rectangle") {
+        if (
+            tool === "rectangle" ||
+            tool === "circle" ||
+            tool === "triangle" ||
+            tool === "diamond" ||
+            tool === "line" ||
+            tool === "arrow"
+        ) {
             currentItemRef.current = {
-                type: "rectangle",
+                type: tool,
                 color,
                 width: lineWidth,
                 points: [
@@ -461,7 +693,6 @@ function Whiteboard({ roomId, userName }) {
             };
 
             redraw();
-
             return;
         }
 
@@ -488,25 +719,42 @@ function Whiteboard({ roomId, userName }) {
         // Always send cursor movement
         sendCursorPosition(event);
 
+        if (tool === "pan" && isPanning) {
+            const currentPos = getPosition(event);
+            const deltaX = currentPos.x - panStartRef.current.x;
+            const deltaY = currentPos.y - panStartRef.current.y;
+
+            viewportRef.current.x += deltaX;
+            viewportRef.current.y += deltaY;
+
+            panStartRef.current = currentPos;
+            redraw();
+            return;
+        }
+
         if (!drawingRef.current) {
             return;
         }
 
         const point = getWorldPosition(event);
-
         const item = currentItemRef.current;
 
         if (!item) return;
 
         // ======================================
-        // RECTANGLE
+        // SHAPES (rectangle, circle, line, arrow, etc)
         // ======================================
 
-        if (item.type === "rectangle") {
+        if (
+            item.type === "rectangle" ||
+            item.type === "circle" ||
+            item.type === "triangle" ||
+            item.type === "diamond" ||
+            item.type === "line" ||
+            item.type === "arrow"
+        ) {
             item.points[1] = point;
-
             redraw();
-
             return;
         }
 
@@ -524,6 +772,11 @@ function Whiteboard({ roomId, userName }) {
     // ==========================================
 
     const stopDrawing = (event) => {
+        if (tool === "pan") {
+            setIsPanning(false);
+            return;
+        }
+
         if (!drawingRef.current) {
             return;
         }
@@ -540,9 +793,7 @@ function Whiteboard({ roomId, userName }) {
         }
 
         drawingRef.current = false;
-
         currentItemRef.current = null;
-
         redraw();
 
         event?.currentTarget.releasePointerCapture?.(
@@ -787,6 +1038,185 @@ function Whiteboard({ roomId, userName }) {
                         T Text
                     </button>
 
+                    {/* LINE */}
+
+                    <button
+                        className={
+                            tool === "line"
+                                ? "active-tool"
+                                : ""
+                        }
+                        onClick={() =>
+                            setTool("line")
+                        }
+                    >
+                        ➖ Line
+                    </button>
+
+                    {/* ARROW */}
+
+                    <button
+                        className={
+                            tool === "arrow"
+                                ? "active-tool"
+                                : ""
+                        }
+                        onClick={() =>
+                            setTool("arrow")
+                        }
+                    >
+                        ➡️ Arrow
+                    </button>
+
+                    {/* SHAPES MENU */}
+
+                    <div style={{ position: "relative" }}>
+                        <button
+                            className={
+                                [
+                                    "rectangle",
+                                    "circle",
+                                    "triangle",
+                                    "diamond",
+                                ].includes(tool)
+                                    ? "active-tool"
+                                    : ""
+                            }
+                            onClick={() =>
+                                setShapeMenuOpen(
+                                    !shapeMenuOpen
+                                )
+                            }
+                        >
+                            🔷 Shapes
+                        </button>
+
+                        {shapeMenuOpen && (
+                            <div
+                                style={{
+                                    position: "absolute",
+                                    top: "100%",
+                                    left: 0,
+                                    background: "white",
+                                    border: "1px solid #dbe1ea",
+                                    borderRadius: "8px",
+                                    zIndex: 100,
+                                    minWidth: "120px",
+                                }}
+                            >
+                                <button
+                                    onClick={() => {
+                                        setTool("rectangle");
+                                        setShapeMenuOpen(false);
+                                    }}
+                                    style={{
+                                        display: "block",
+                                        width: "100%",
+                                        padding: "8px 12px",
+                                        border: "none",
+                                        background: "transparent",
+                                        cursor: "pointer",
+                                        textAlign: "left",
+                                    }}
+                                >
+                                    ▭ Rectangle
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setTool("circle");
+                                        setShapeMenuOpen(false);
+                                    }}
+                                    style={{
+                                        display: "block",
+                                        width: "100%",
+                                        padding: "8px 12px",
+                                        border: "none",
+                                        background: "transparent",
+                                        cursor: "pointer",
+                                        textAlign: "left",
+                                    }}
+                                >
+                                    ● Circle
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setTool("triangle");
+                                        setShapeMenuOpen(false);
+                                    }}
+                                    style={{
+                                        display: "block",
+                                        width: "100%",
+                                        padding: "8px 12px",
+                                        border: "none",
+                                        background: "transparent",
+                                        cursor: "pointer",
+                                        textAlign: "left",
+                                    }}
+                                >
+                                    △ Triangle
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setTool("diamond");
+                                        setShapeMenuOpen(false);
+                                    }}
+                                    style={{
+                                        display: "block",
+                                        width: "100%",
+                                        padding: "8px 12px",
+                                        border: "none",
+                                        background: "transparent",
+                                        cursor: "pointer",
+                                        textAlign: "left",
+                                    }}
+                                >
+                                    ◇ Diamond
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* PAN */}
+
+                    <button
+                        className={
+                            tool === "pan"
+                                ? "active-tool"
+                                : ""
+                        }
+                        onClick={() =>
+                            setTool("pan")
+                        }
+                        title="Hold spacebar to pan"
+                    >
+                        ✋ Pan
+                    </button>
+
+                    {/* UNDO / REDO */}
+
+                    <button
+                        onClick={undo}
+                        title="Undo (Ctrl+Z)"
+                    >
+                        ↶ Undo
+                    </button>
+
+                    <button
+                        onClick={redo}
+                        title="Redo (Ctrl+Y)"
+                    >
+                        ↷ Redo
+                    </button>
+
+                    {/* FIT TO SCREEN */}
+
+                    <button
+                        onClick={fitToScreen}
+                        title="Fit all content to screen"
+                    >
+                        ⛶ Fit
+                    </button>
+
                     {/* CLEAR */}
 
                     <button
@@ -804,6 +1234,9 @@ function Whiteboard({ roomId, userName }) {
                     <canvas
                         ref={canvasRef}
                         className="whiteboard"
+                        style={{
+                            cursor: tool === "pan" ? "grab" : "default",
+                        }}
                         onPointerDown={
                             startDrawing
                         }
