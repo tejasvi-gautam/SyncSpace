@@ -418,22 +418,19 @@
    ===================================================== */
 
 .canvas-container {
-  position: relative;
+  position: absolute;
+  inset: 0;
 
-  flex: 1;
-  min-height: 0;
+  margin: 0;
 
-  margin: 12px;
+  background-color: transparent;
 
-  background-color: #ffffff;
-
-  border: 1px solid #dfe5ed;
-  border-radius: 8px;
+  border: 0;
+  border-radius: 0;
 
   overflow: hidden;
 
-  box-shadow:
-    0 4px 18px rgba(15, 23, 42, 0.05);
+  transform-origin: top left;
 }
 
 .canvas-container.grid-enabled {
@@ -451,7 +448,8 @@
   background-size: 24px 24px;
 }
 
-.drawing-canvas {
+.drawing-canvas,
+.whiteboard-canvas {
   position: absolute;
 
   inset: 0;
@@ -462,6 +460,8 @@
   cursor: crosshair;
 
   touch-action: none;
+
+  z-index: 1;
 }
 
 .empty-board {

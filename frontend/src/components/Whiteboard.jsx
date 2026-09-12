@@ -1294,10 +1294,14 @@ function Whiteboard({ roomId = "ROOM" }) {
     // STOP
     // =====================================================
 
-    const stopDrawing = () => {
+    const stopDrawing = (event) => {
         if (!drawingRef.current) {
             return;
         }
+
+        event?.currentTarget?.releasePointerCapture?.(
+            event.pointerId
+        );
 
         drawingRef.current =
             false;
@@ -2502,6 +2506,9 @@ function Whiteboard({ roomId = "ROOM" }) {
                                 stopDrawing
                             }
                             onPointerCancel={
+                                stopDrawing
+                            }
+                            onLostPointerCapture={
                                 stopDrawing
                             }
                         />
