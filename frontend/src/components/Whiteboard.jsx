@@ -58,6 +58,8 @@ function Whiteboard({ roomId, userName }) {
 
     const [textSize, setTextSize] = useState(24);
     const [textEditor, setTextEditor] = useState(null);
+    const [selectedItemIndex, setSelectedItemIndex] = useState(null);
+    const [editingMode, setEditingMode] = useState(null); // "move", "resize", null
 
     // Other users' cursors
     const [remoteCursors, setRemoteCursors] = useState({});
@@ -208,6 +210,51 @@ function Whiteboard({ roomId, userName }) {
         viewportRef.current.y = -minY * scale + padding;
 
         redraw();
+    };
+
+    // ==========================================
+    // TEXT SELECTION & EDITING
+    // ==========================================
+
+    const getTextBounds = (item) => {
+        if (item.type !== "text") return null;
+
+        const canvas = canvasRef.current;
+        if (!canvas) return null;
+
+        const context = canvas.getContext("2d");
+        context.font = `${item.width || 24}px sans-serif`;
+        const metrics = context.measureText(item.text);
+
+        return {
+            x: item.points[0].x,
+            y: item.points[0].y - (item.width || 24),
+            width: metrics.width,
+            height: item.width || 24,
+        };
+    };
+
+    const isPointInText = (point, item) => {
+        const bounds = getTextBounds(item);
+        if (!bounds) return false;
+
+        return (
+            point.x >= bounds.x &&
+            point.x <= bounds.x + bounds.width &&
+            point.y >= bounds.y &&
+            point.y <= bounds.y + bounds.height
+        );
+    };
+
+    const findClickedText = (point) => {
+        // Check from last item to first (top to bottom rendering order)
+        for (let i = strokesRef.current.length - 1; i >= 0; i--) {
+            const item = strokesRef.current[i];
+            if (item.type === "text" && isPointInText(point, item)) {
+                return i;
+            }
+        }
+        return null;
     };
 
     // ==========================================
@@ -424,6 +471,20 @@ function Whiteboard({ roomId, userName }) {
 
         if (currentItemRef.current) {
             drawItem(currentItemRef.current);
+        }
+
+        // Draw selection box for selected text item
+        if (selectedItemIndex !== null && strokesRef.current[selectedItemIndex]?.type === "text") {
+            const selectedItem = strokesRef.current[selectedItemIndex];
+            const bounds = getTextBounds(selectedItem);
+
+            if (bounds) {
+                context.strokeStyle = "#2563eb";
+                context.lineWidth = 2;
+                context.setLineDash([4, 4]);
+                context.strokeRect(bounds.x - 4, bounds.y - 4, bounds.width + 8, bounds.height + 8);
+                context.setLineDash([]);
+            }
         }
 
         context.restore();
@@ -654,7 +715,18 @@ function Whiteboard({ roomId, userName }) {
     // ==========================================
 
     const startDrawing = (event) => {
-        if (tool === "text" || tool === "select") return;
+        if (tool === "text") return;
+
+        // Handle select tool - detect if clicked on text
+        if (tool === "select") {
+            const worldPos = getWorldPosition(event);
+            const clickedIndex = findClickedText(worldPos);
+            setSelectedItemIndex(clickedIndex);
+            if (clickedIndex !== null) {
+                setEditingMode("move");
+            }
+            return;
+        }
 
         if (tool === "pan") {
             setIsPanning(true);
@@ -732,6 +804,17 @@ function Whiteboard({ roomId, userName }) {
             return;
         }
 
+        // Handle select tool - move selected text
+        if (tool === "select" && editingMode === "move" && selectedItemIndex !== null) {
+            const point = getWorldPosition(event);
+            const selectedItem = strokesRef.current[selectedItemIndex];
+            if (selectedItem && selectedItem.type === "text") {
+                selectedItem.points[0] = point;
+                redraw();
+            }
+            return;
+        }
+
         if (!drawingRef.current) {
             return;
         }
@@ -774,6 +857,21 @@ function Whiteboard({ roomId, userName }) {
     const stopDrawing = (event) => {
         if (tool === "pan") {
             setIsPanning(false);
+            return;
+        }
+
+        // Stop moving selected text
+        if (tool === "select" && editingMode === "move") {
+            setEditingMode(null);
+            if (selectedItemIndex !== null) {
+                const item = strokesRef.current[selectedItemIndex];
+                if (item && item.type === "text") {
+                    publish({
+                        type: "whiteboard-item",
+                        item,
+                    });
+                }
+            }
             return;
         }
 
@@ -977,6 +1075,23 @@ function Whiteboard({ roomId, userName }) {
                             }
                         />
                     </label>
+
+                    {/* SELECT */}
+
+                    <button
+                        className={
+                            tool === "select"
+                                ? "active-tool"
+                                : ""
+                        }
+                        onClick={() => {
+                            setTool("select");
+                            setSelectedItemIndex(null);
+                        }}
+                        title="Select to edit text"
+                    >
+                        ➤ Select
+                    </button>
 
                     {/* DRAW */}
 
@@ -1347,6 +1462,114 @@ function Whiteboard({ roomId, userName }) {
                                 }
                             }}
                         />
+                    )}
+
+                    {/* ==================================
+                        TEXT PROPERTIES PANEL
+                    ================================== */}
+
+                    {selectedItemIndex !== null && strokesRef.current[selectedItemIndex]?.type === "text" && (
+                        <div
+                            style={{
+                                position: "fixed",
+                                bottom: "20px",
+                                right: "20px",
+                                background: "white",
+                                border: "1px solid #dbe1ea",
+                                borderRadius: "12px",
+                                padding: "16px",
+                                boxShadow: "0 4px 12px rgba(15, 23, 42, 0.15)",
+                                zIndex: 100,
+                                minWidth: "250px",
+                            }}
+                        >
+                            <div style={{ marginBottom: "12px" }}>
+                                <label style={{ fontSize: "12px", fontWeight: "600", color: "#6b7280" }}>
+                                    Font Size
+                                </label>
+                                <input
+                                    type="range"
+                                    min="12"
+                                    max="64"
+                                    value={strokesRef.current[selectedItemIndex].width || 24}
+                                    onChange={(event) => {
+                                        const newSize = Number(event.target.value);
+                                        strokesRef.current[selectedItemIndex].width = newSize;
+                                        redraw();
+                                    }}
+                                    style={{ width: "100%", marginTop: "6px" }}
+                                />
+                            </div>
+
+                            <div style={{ marginBottom: "12px" }}>
+                                <label style={{ fontSize: "12px", fontWeight: "600", color: "#6b7280" }}>
+                                    Color
+                                </label>
+                                <input
+                                    type="color"
+                                    value={strokesRef.current[selectedItemIndex].color}
+                                    onChange={(event) => {
+                                        strokesRef.current[selectedItemIndex].color = event.target.value;
+                                        redraw();
+                                    }}
+                                    style={{ width: "100%", height: "36px", marginTop: "6px", cursor: "pointer", borderRadius: "6px", border: "1px solid #dbe1ea" }}
+                                />
+                            </div>
+
+                            <div style={{ display: "flex", gap: "8px" }}>
+                                <button
+                                    onClick={() => {
+                                        strokesRef.current.splice(selectedItemIndex, 1);
+                                        publish({
+                                            type: "whiteboard-clear",
+                                        });
+                                        strokesRef.current.forEach((item) => {
+                                            publish({
+                                                type: "whiteboard-item",
+                                                item,
+                                            });
+                                        });
+                                        setSelectedItemIndex(null);
+                                        redraw();
+                                    }}
+                                    style={{
+                                        flex: 1,
+                                        padding: "8px",
+                                        background: "#dc2626",
+                                        color: "white",
+                                        border: "none",
+                                        borderRadius: "6px",
+                                        cursor: "pointer",
+                                        fontSize: "12px",
+                                        fontWeight: "600",
+                                    }}
+                                >
+                                    🗑 Delete
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        publish({
+                                            type: "whiteboard-item",
+                                            item: strokesRef.current[selectedItemIndex],
+                                        });
+                                        setSelectedItemIndex(null);
+                                    }}
+                                    style={{
+                                        flex: 1,
+                                        padding: "8px",
+                                        background: "#2563eb",
+                                        color: "white",
+                                        border: "none",
+                                        borderRadius: "6px",
+                                        cursor: "pointer",
+                                        fontSize: "12px",
+                                        fontWeight: "600",
+                                    }}
+                                >
+                                    Save
+                                </button>
+                            </div>
+                        </div>
                     )}
 
                 </div>
