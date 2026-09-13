@@ -1,4 +1,3 @@
-
 import "./App.css";
 import { Routes, Route, Navigate } from "react-router-dom";
 
@@ -8,8 +7,7 @@ import Whiteboard from "./components/Whiteboard";
 
 function ProtectedRoom() {
     const isAuthenticated =
-        localStorage.getItem("syncspace_authenticated") === "true" ||
-        Boolean(localStorage.getItem("syncspace_room"));
+        localStorage.getItem("syncspace_authenticated") === "true";
 
     return isAuthenticated ? (
         <Whiteboard />
@@ -22,20 +20,17 @@ function App() {
     return (
         <div className="app">
             <Routes>
-                <Route path="/" element={<Login />} />
-                <Route path="/login" element={<Login />} />
-                <Route
-                    path="/home"
-                    element={<Home />}
-                />
+                <Route path="/" element={<Home />} />
 
-                {/* 🎨 Collaborative Whiteboard Room */}
+                <Route path="/login" element={<Login />} />
+
+                <Route path="/home" element={<Home />} />
+
                 <Route
                     path="/room/:roomId"
                     element={<ProtectedRoom />}
                 />
 
-                {/* 🔄 Redirect invalid URLs to Login */}
                 <Route
                     path="*"
                     element={<Navigate to="/" replace />}
