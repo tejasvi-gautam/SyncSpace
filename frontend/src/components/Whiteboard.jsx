@@ -5,6 +5,7 @@ import CodeEditor from "./CodeEditor";
 import socket from "../socket";
 import "./Whiteboard.css";
 import Toolbar from "./Whiteboard/Toolbar/Toolbar";
+import TextProperties from "./Whiteboard/TextProperties/TextProperties";
 
 function Whiteboard({ roomId, userName }) {
     const canvasRef = useRef(null);
@@ -1165,113 +1166,13 @@ function Whiteboard({ roomId, userName }) {
                         />
                     )}
 
-                    {/* ==================================
-                        TEXT PROPERTIES PANEL
-                    ================================== */}
-
-                    {selectedItemIndex !== null && strokesRef.current[selectedItemIndex]?.type === "text" && (
-                        <div
-                            style={{
-                                position: "fixed",
-                                bottom: "20px",
-                                right: "20px",
-                                background: "white",
-                                border: "1px solid #dbe1ea",
-                                borderRadius: "12px",
-                                padding: "16px",
-                                boxShadow: "0 4px 12px rgba(15, 23, 42, 0.15)",
-                                zIndex: 100,
-                                minWidth: "250px",
-                            }}
-                        >
-                            <div style={{ marginBottom: "12px" }}>
-                                <label style={{ fontSize: "12px", fontWeight: "600", color: "#6b7280" }}>
-                                    Font Size
-                                </label>
-                                <input
-                                    type="range"
-                                    min="12"
-                                    max="64"
-                                    value={strokesRef.current[selectedItemIndex].width || 24}
-                                    onChange={(event) => {
-                                        const newSize = Number(event.target.value);
-                                        strokesRef.current[selectedItemIndex].width = newSize;
-                                        redraw();
-                                    }}
-                                    style={{ width: "100%", marginTop: "6px" }}
-                                />
-                            </div>
-
-                            <div style={{ marginBottom: "12px" }}>
-                                <label style={{ fontSize: "12px", fontWeight: "600", color: "#6b7280" }}>
-                                    Color
-                                </label>
-                                <input
-                                    type="color"
-                                    value={strokesRef.current[selectedItemIndex].color}
-                                    onChange={(event) => {
-                                        strokesRef.current[selectedItemIndex].color = event.target.value;
-                                        redraw();
-                                    }}
-                                    style={{ width: "100%", height: "36px", marginTop: "6px", cursor: "pointer", borderRadius: "6px", border: "1px solid #dbe1ea" }}
-                                />
-                            </div>
-
-                            <div style={{ display: "flex", gap: "8px" }}>
-                                <button
-                                    onClick={() => {
-                                        strokesRef.current.splice(selectedItemIndex, 1);
-                                        publish({
-                                            type: "whiteboard-clear",
-                                        });
-                                        strokesRef.current.forEach((item) => {
-                                            publish({
-                                                type: "whiteboard-item",
-                                                item,
-                                            });
-                                        });
-                                        setSelectedItemIndex(null);
-                                        redraw();
-                                    }}
-                                    style={{
-                                        flex: 1,
-                                        padding: "8px",
-                                        background: "#dc2626",
-                                        color: "white",
-                                        border: "none",
-                                        borderRadius: "6px",
-                                        cursor: "pointer",
-                                        fontSize: "12px",
-                                        fontWeight: "600",
-                                    }}
-                                >
-                                    🗑 Delete
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        publish({
-                                            type: "whiteboard-item",
-                                            item: strokesRef.current[selectedItemIndex],
-                                        });
-                                        setSelectedItemIndex(null);
-                                    }}
-                                    style={{
-                                        flex: 1,
-                                        padding: "8px",
-                                        background: "#2563eb",
-                                        color: "white",
-                                        border: "none",
-                                        borderRadius: "6px",
-                                        cursor: "pointer",
-                                        fontSize: "12px",
-                                        fontWeight: "600",
-                                    }}
-                                >
-                                    Save
-                                </button>
-                            </div>
-                        </div>
-                    )}
+                    <TextProperties
+                      selectedItemIndex={selectedItemIndex}
+                      strokesRef={strokesRef}
+                      redraw={redraw}
+                      publish={publish}
+                      setSelectedItemIndex={setSelectedItemIndex}
+                    />
 
                 </div>
 
