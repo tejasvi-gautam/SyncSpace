@@ -1,4 +1,5 @@
 import "./Toolbar.css";
+import ShapeMenu from "../ShapeMenu/ShapeMenu";
 
 function Toolbar({
     tool,
@@ -181,92 +182,11 @@ function Toolbar({
                     🔷 Shapes
                 </button>
 
-                {shapeMenuOpen && (
-                    <div
-                        style={{
-                            position: "absolute",
-                            top: "100%",
-                            left: 0,
-                            background: "white",
-                            border: "1px solid #dbe1ea",
-                            borderRadius: "8px",
-                            zIndex: 100,
-                            minWidth: "120px",
-                        }}
-                    >
-                        <button
-                            onClick={() => {
-                                setTool("rectangle");
-                                setShapeMenuOpen(false);
-                            }}
-                            style={{
-                                display: "block",
-                                width: "100%",
-                                padding: "8px 12px",
-                                border: "none",
-                                background: "transparent",
-                                cursor: "pointer",
-                                textAlign: "left",
-                            }}
-                        >
-                            ▭ Rectangle
-                        </button>
-
-                        <button
-                            onClick={() => {
-                                setTool("circle");
-                                setShapeMenuOpen(false);
-                            }}
-                            style={{
-                                display: "block",
-                                width: "100%",
-                                padding: "8px 12px",
-                                border: "none",
-                                background: "transparent",
-                                cursor: "pointer",
-                                textAlign: "left",
-                            }}
-                        >
-                            ● Circle
-                        </button>
-
-                        <button
-                            onClick={() => {
-                                setTool("triangle");
-                                setShapeMenuOpen(false);
-                            }}
-                            style={{
-                                display: "block",
-                                width: "100%",
-                                padding: "8px 12px",
-                                border: "none",
-                                background: "transparent",
-                                cursor: "pointer",
-                                textAlign: "left",
-                            }}
-                        >
-                            △ Triangle
-                        </button>
-
-                        <button
-                            onClick={() => {
-                                setTool("diamond");
-                                setShapeMenuOpen(false);
-                            }}
-                            style={{
-                                display: "block",
-                                width: "100%",
-                                padding: "8px 12px",
-                                border: "none",
-                                background: "transparent",
-                                cursor: "pointer",
-                                textAlign: "left",
-                            }}
-                        >
-                            ◇ Diamond
-                        </button>
-                    </div>
-                )}
+                <ShapeMenu
+                  shapeMenuOpen={shapeMenuOpen}
+                  setTool={setTool}
+                  setShapeMenuOpen={setShapeMenuOpen}
+                />
             </div>
 
             {/* PAN */}
