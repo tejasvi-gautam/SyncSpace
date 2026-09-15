@@ -169,14 +169,14 @@ export default function Home() {
                         Built for focused collaboration
                     </span>
 
-                    {/* LOGIN BUTTON */}
+                    {/* SIGN IN BUTTON */}
 
                     <button
                         className="sign-in-button"
                         type="button"
                         onClick={openLogin}
                     >
-                        <span>LOGIN</span>
+                        <span>SIGN IN</span>
 
                         <span
                             className="login-arrow"
@@ -609,8 +609,36 @@ export default function Home() {
 
             </footer>
 
+            <nav className="scroll-controls" aria-label="Page navigation">
+                <button
+                    type="button"
+                    aria-label="Scroll up"
+                    onClick={() =>
+                        document.querySelector(".home-page")?.scrollBy({
+                            top: -window.innerHeight * 0.85,
+                            behavior: "smooth",
+                        })
+                    }
+                >
+                    ↑
+                </button>
+
+                <button
+                    type="button"
+                    aria-label="Scroll down"
+                    onClick={() =>
+                        document.querySelector(".home-page")?.scrollBy({
+                            top: window.innerHeight * 0.85,
+                            behavior: "smooth",
+                        })
+                    }
+                >
+                    ↓
+                </button>
+            </nav>
+
             {/* ==========================================
-                LOGIN MODAL
+                SIGN IN MODAL
             ========================================== */}
 
             {isSignInOpen && (

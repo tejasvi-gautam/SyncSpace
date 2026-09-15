@@ -8,6 +8,7 @@
 
 .home-page {
     min-height: 100vh;
+    height: 100vh;
     background:
         radial-gradient(
             circle at 15% 20%,
@@ -22,6 +23,10 @@
         #17181d;
     color: #f4f1ea;
     overflow-x: hidden;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+    scrollbar-color: rgba(245, 138, 40, 0.7) transparent;
+    scrollbar-width: thin;
     position: relative;
     font-family:
         Inter,
@@ -1772,4 +1777,55 @@
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
     }
+}
+
+.home-page::-webkit-scrollbar {
+    width: 8px;
+}
+
+.home-page::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.home-page::-webkit-scrollbar-thumb {
+    border: 2px solid #17181d;
+    border-radius: 999px;
+    background: rgba(245, 138, 40, 0.7);
+}
+
+.scroll-controls {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.scroll-controls button {
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 10px;
+    background: rgba(23, 24, 29, 0.88);
+    color: #f4f1ea;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
+    transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.scroll-controls button:hover {
+    background: rgba(245, 138, 40, 0.2);
+    border-color: rgba(245, 138, 40, 0.55);
+    color: #f58a28;
+    transform: translateY(-2px);
+}
+
+.scroll-controls button:active {
+    transform: translateY(1px);
 }

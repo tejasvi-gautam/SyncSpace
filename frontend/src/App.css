@@ -679,6 +679,70 @@ textarea {
     color: #334155;
 }
 
+/* Reference room colors for the whiteboard only. */
+body .app .syncspace {
+    background: #1c1e24;
+    color: #f2f1ed;
+}
+
+body .app .syncspace .topbar {
+    background: #1c1e24;
+    border-bottom-color: #31343d;
+}
+
+body .app .syncspace .tool-panel {
+    background: #202228;
+    border-right-color: #31343d;
+}
+
+body .app .syncspace .tool.active,
+body .app .syncspace .mode-button.active,
+body .app .syncspace .tool:hover,
+body .app .syncspace .mode-button:hover {
+    border-color: rgba(232, 135, 58, 0.45);
+    background: rgba(232, 135, 58, 0.14);
+    color: #e8873a;
+}
+
+body .app .syncspace .canvas-area {
+    background: #f6f4ef;
+}
+
+body .app .syncspace .canvas-area.grid {
+    background-color: #f6f4ef;
+    background-image:
+        linear-gradient(#e4e0d5 1px, transparent 1px),
+        linear-gradient(90deg, #e4e0d5 1px, transparent 1px);
+    background-size: 24px 24px;
+}
+
+body .app .syncspace .floating-code-editor,
+body .app .syncspace .bottom-bar {
+    background: #181a20;
+    border-color: #31343d;
+}
+
+body .app .syncspace .code-body,
+body .app .syncspace .code-body textarea,
+body .app .syncspace .code-lines,
+body .app .syncspace .code-status {
+    background: #181a20;
+    color: #b9bac0;
+}
+
+body .app .syncspace .code-body textarea {
+    color: #f2f1ed;
+}
+
+body .app .syncspace .color-picker {
+    border-color: #e8873a;
+    background: #1c1e24;
+}
+
+body .app .syncspace .brush-setting input[type="range"] {
+    accent-color: #e8873a;
+}
+
 .code-actions .code-close {
     width: 27px;
     height: 27px;
