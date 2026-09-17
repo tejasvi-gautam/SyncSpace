@@ -1,0 +1,13 @@
+.remote-cursor {
+    position: absolute;
+    pointer-events: none;
+}
+
+.cursor-pointer {
+    font-size: 16px;
+}
+
+.cursor-label {
+    font-size: 12px;
+    white-space: nowrap;
+}

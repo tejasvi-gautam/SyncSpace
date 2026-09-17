@@ -6,6 +6,7 @@ import socket from "../socket";
 import "./Whiteboard.css";
 import Toolbar from "./Whiteboard/Toolbar/Toolbar";
 import TextProperties from "./Whiteboard/TextProperties/TextProperties";
+import RemoteCursors from "./Whiteboard/RemoteCursors/RemoteCursors";
 
 function Whiteboard({ roomId, userName }) {
     const canvasRef = useRef(null);
@@ -1075,37 +1076,11 @@ function Whiteboard({ roomId, userName }) {
                         }
                     />
 
-                    {/* ==================================
-                        REMOTE CURSORS
-                    ================================== */}
-
-                    {Object.values(
-                        remoteCursors
-                    ).map((cursor) => {
-                        const remotePosition = toScreenPoint(cursor);
-
-                        return (
-                            <div
-                                key={cursor.userId}
-                                className="remote-cursor"
-                                style={{
-                                    left: remotePosition.x,
-                                    top: remotePosition.y,
-                                    "--cursor-color":
-                                        cursor.color,
-                                }}
-                            >
-                            <div className="cursor-pointer">
-                                ◆
-                            </div>
-
-                                <div className="cursor-label">
-                                    {cursor.userName}
-                                </div>
-                            </div>
-                        );
-                    })}
-
+                    <RemoteCursors
+                     remoteCursors={remoteCursors}
+                     toScreenPoint={toScreenPoint}
+                    />
+                    
                     {/* ==================================
                         TEXT INPUT
                     ================================== */}
