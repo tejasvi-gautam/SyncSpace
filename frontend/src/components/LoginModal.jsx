@@ -5,13 +5,18 @@ import "./LoginModal.css";
 export default function LoginModal({ onClose }) {
     const navigate = useNavigate();
 
+    const [isSignUp, setIsSignUp] = useState(false);
+
     const [email, setEmail] = useState(
         localStorage.getItem("syncspace_email") || ""
     );
 
+    const [name, setName] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:54321";
 
     useEffect(() => {
         const handleEscape = (event) => {
@@ -49,27 +54,61 @@ export default function LoginModal({ onClose }) {
             return;
         }
 
-        if (password.length < 6) {
-            setError("Password must be at least 6 characters.");
+        if (isSignUp && !name.trim()) {
+            setError("Please enter your name.");
+            return;
+        }
+
+        if (password.length < 8) {
+            setError("Password must be at least 8 characters.");
+            return;
+        }
+
+        if (
+            isSignUp &&
+            (!/[A-Z]/.test(password) ||
+                !/[a-z]/.test(password) ||
+                !/[0-9]/.test(password) ||
+                !/[^A-Za-z0-9]/.test(password))
+        ) {
+            setError("Sign-up passwords need upper- and lowercase letters, a number, and a special character.");
             return;
         }
 
         setIsSubmitting(true);
 
         try {
-            /*
-             * Mock login
-             *
-             * This simulates a successful login.
-             * Replace this section with your backend API
-             * when real authentication is ready.
-             */
+            if (isSignUp) {
+                const registerResponse = await fetch(`${apiUrl}/api/auth/register`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    body: JSON.stringify({
+                        name: name.trim(),
+                        email: cleanEmail,
+                        password,
+                        role: "interviewee",
+                    }),
+                });
 
-            await new Promise((resolve) =>
-                setTimeout(resolve, 700)
-            );
+                const registerData = await registerResponse.json();
+                if (!registerResponse.ok) {
+                    throw new Error(registerData.message || registerData.errors?.join(" ") || "Unable to create your account.");
+                }
+            }
 
-            // Save login information
+            const loginResponse = await fetch(`${apiUrl}/api/auth/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ email: cleanEmail, password }),
+            });
+
+            const loginData = await loginResponse.json();
+            if (!loginResponse.ok) {
+                throw new Error(loginData.message || loginData.errors?.join(" ") || "Unable to sign in.");
+            }
+
             localStorage.setItem(
                 "syncspace_authenticated",
                 "true"
@@ -82,7 +121,7 @@ export default function LoginModal({ onClose }) {
 
             localStorage.setItem(
                 "syncspace_username",
-                cleanEmail.split("@")[0]
+                isSignUp ? name.trim() : cleanEmail.split("@")[0]
             );
 
             localStorage.setItem(
@@ -113,9 +152,7 @@ export default function LoginModal({ onClose }) {
             // Open whiteboard
             navigate(`/room/${roomId}`);
         } catch (err) {
-            setError(
-                "Unable to sign in. Please try again."
-            );
+            setError(err.message || (isSignUp ? "Unable to create your account." : "Unable to sign in."));
         } finally {
             setIsSubmitting(false);
         }
@@ -153,16 +190,17 @@ export default function LoginModal({ onClose }) {
 
                 {/* Heading */}
                 <p className="login-kicker">
-                    WELCOME BACK
+                    {isSignUp ? "GET STARTED" : "WELCOME BACK"}
                 </p>
 
                 <h2 id="login-title">
-                    Sign in to SyncSpace
+                    {isSignUp ? "Create your SyncSpace account" : "Sign in to SyncSpace"}
                 </h2>
 
                 <p className="login-description">
-                    Continue to your collaborative
-                    interview workspace.
+                    {isSignUp
+                        ? "Create an account to access your collaborative interview workspace."
+                        : "Continue to your collaborative interview workspace."}
                 </p>
 
                 {/* Login form */}
@@ -170,6 +208,27 @@ export default function LoginModal({ onClose }) {
                     className="login-form"
                     onSubmit={handleSubmit}
                 >
+                    {isSignUp && (
+                        <div className="login-field">
+                            <label htmlFor="login-name">
+                                Your name
+                            </label>
+
+                            <input
+                                id="login-name"
+                                type="text"
+                                placeholder="Alex Morgan"
+                                value={name}
+                                onChange={(event) => {
+                                    setName(event.target.value);
+                                    setError("");
+                                }}
+                                autoComplete="name"
+                                autoFocus
+                            />
+                        </div>
+                    )}
+
                     {/* Email */}
                     <div className="login-field">
                         <label htmlFor="login-email">
@@ -186,7 +245,7 @@ export default function LoginModal({ onClose }) {
                                 setError("");
                             }}
                             autoComplete="email"
-                            autoFocus
+                            autoFocus={!isSignUp}
                         />
                     </div>
 
@@ -227,8 +286,8 @@ export default function LoginModal({ onClose }) {
                     >
                         <span>
                             {isSubmitting
-                                ? "Signing in..."
-                                : "Sign In"}
+                                ? (isSignUp ? "Creating account..." : "Signing in...")
+                                : (isSignUp ? "Create account" : "Sign In")}
                         </span>
 
                         {!isSubmitting && (
@@ -242,18 +301,17 @@ export default function LoginModal({ onClose }) {
                 {/* Footer */}
                 <div className="login-footer">
                     <span>
-                        New to SyncSpace?
+                        {isSignUp ? "Already have an account?" : "New to SyncSpace?"}
                     </span>
 
                     <button
                         type="button"
                         onClick={() => {
-                            setError(
-                                "Account creation will be available soon."
-                            );
+                            setIsSignUp((current) => !current);
+                            setError("");
                         }}
                     >
-                        Create an account
+                        {isSignUp ? "Sign in" : "Create an account"}
                     </button>
                 </div>
 
