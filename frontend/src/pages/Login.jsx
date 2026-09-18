@@ -1,11 +1,12 @@
-
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import AuthCard from "../components/auth/Authcard";
 import "./Login.css";
 import socket from "../socket";
 
 export default function Login() {
     const [mode, setMode] = useState("login");
+    const navigate = useNavigate();
 
     // Listen for Socket.IO connection status
     useEffect(() => {
@@ -52,9 +53,15 @@ export default function Login() {
 
                 if (!response.ok) {
                     console.error("Signup failed:", data);
-                    alert(data.message || "Signup failed");
+
+                    const errorMessage =
+                       data.errors?.join("\n") ||
+                       data.message ||
+                       "Signup failed";
+
+                    alert(errorMessage);
                     return;
-                }
+                    }
 
                 console.log("Signup successful:", data);
 
@@ -87,20 +94,23 @@ export default function Login() {
 
             if (!response.ok) {
                 console.error("Login failed:", data);
-                alert(data.message || "Login failed");
+
+                const errorMessage =
+                    data.errors?.join("\n") ||
+                    data.message ||
+                    "Login failed";
+
+                alert(errorMessage);
                 return;
-            }
+        }
 
             console.log("Login successful:", data);
 
-            // Login succeeded and the backend has set
-            // the JWT HTTP-only cookie.
-            //
-            // Now start the Socket.IO connection.
-            socket.connect();
+            navigate("/", { replace: true });
 
-        } catch (error) {
-            console.error("Authentication error:", error);
+        }   catch (error) {
+                console.error("Authentication error:", error);
+                alert("Cannot connect to the backend server. Make sure it is running.");
         }
     };
 
