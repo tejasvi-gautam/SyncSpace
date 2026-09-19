@@ -1,120 +1,347 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import Editor from "@monaco-editor/react";
 
-const languageTemplates = {
-    JavaScript: `// SyncSpace workspace\nfunction summarizeIdea(idea) {\n  return idea.trim();\n}\n\nconst idea = summarizeIdea("Build together");\nconsole.log(idea);`,
-    TypeScript: `// SyncSpace workspace\ntype Idea = string;\n\nfunction summarizeIdea(idea: Idea): Idea {\n  return idea.trim();\n}\n\nconsole.log(summarizeIdea("Build together"));`,
-    Python: `# SyncSpace workspace\ndef summarize_idea(idea):\n    return idea.strip()\n\nidea = summarize_idea("Build together")\nprint(idea)`,
-    JSON: `{\n  "workspace": "SyncSpace",\n  "idea": "Build together",\n  "status": "shared"\n}`
+const languageConfig = {
+    JavaScript: {
+        monacoLanguage: "javascript",
+        template: `// SyncSpace interview workspace
+
+function solveProblem(input) {
+    return input.trim();
+}
+
+const result = solveProblem("Build together");
+
+console.log(result);`,
+    },
+
+    TypeScript: {
+        monacoLanguage: "typescript",
+        template: `// SyncSpace interview workspace
+
+type Input = string;
+
+function solveProblem(input: Input): Input {
+    return input.trim();
+}
+
+console.log(solveProblem("Build together"));`,
+    },
+
+    Python: {
+        monacoLanguage: "python",
+        template: `# SyncSpace interview workspace
+
+def solve_problem(input_text):
+    return input_text.strip()
+
+result = solve_problem("Build together")
+
+print(result)`,
+    },
+
+    JSON: {
+        monacoLanguage: "json",
+        template: `{
+  "project": "SyncSpace",
+  "workspace": "Interview",
+  "status": "shared"
+}`,
+    },
 };
 
-function CodeEditor({ roomId }) {
-    const [code, setCode] = useState(languageTemplates.JavaScript);
-    const [language, setLanguage] = useState("JavaScript");
-    const [saved, setSaved] = useState(false);
-    const channelRef = useRef(null);
-    const codeRef = useRef(code);
-    const languageRef = useRef(language);
+function CodeEditor({
+    roomId,
+    code,
+    setCode,
+    language,
+    setLanguage,
+    codeSaved,
+    setCodeSaved,
+    codePanelWidth,
+    codeResizeRef,
+    setIsCodeOpen,
+    socket,
+}) {
+    const [editorInstance, setEditorInstance] =
+        useState(null);
 
-    useEffect(() => {
-        if (!roomId || typeof BroadcastChannel === "undefined") return undefined;
+    // =====================================================
+    // UPDATE CODE
+    // =====================================================
 
-        const channel = new BroadcastChannel(`syncspace-room-${roomId}`);
-        channelRef.current = channel;
-        channel.onmessage = (event) => {
-            if (event.data.type === "code-sync-request") {
-                channel.postMessage({
-                    type: "code-sync",
-                    code: codeRef.current,
-                    language: languageRef.current
-                });
-                return;
-            }
+    const updateCode = (value) => {
+        const nextCode = value ?? "";
 
-            if (event.data.type !== "code-sync") return;
-            setLanguage(event.data.language);
-            setCode(event.data.code);
-            codeRef.current = event.data.code;
-            languageRef.current = event.data.language;
-        };
-        channel.postMessage({ type: "code-sync-request" });
+        setCode(nextCode);
+        setCodeSaved(false);
 
-        return () => {
-            channel.close();
-            channelRef.current = null;
-        };
-    }, [roomId]);
-
-    const publishCode = (nextCode, nextLanguage = language) => {
-        channelRef.current?.postMessage({
-            type: "code-sync",
-            code: nextCode,
-            language: nextLanguage
-        });
+        if (
+            socket &&
+            socket.connected &&
+            roomId
+        ) {
+            socket.emit("code-change", {
+                roomId,
+                code: nextCode,
+            });
+        }
     };
 
-    const updateCode = (event) => {
-        setCode(event.target.value);
-        codeRef.current = event.target.value;
-        setSaved(false);
-        publishCode(event.target.value);
-    };
+    // =====================================================
+    // CHANGE LANGUAGE
+    // =====================================================
 
     const changeLanguage = (event) => {
-        const nextLanguage = event.target.value;
-        const savedCode = localStorage.getItem(`syncspace-code-${nextLanguage}`);
-        const nextCode = savedCode || languageTemplates[nextLanguage];
+        const nextLanguage =
+            event.target.value;
+
+        const savedCode =
+            localStorage.getItem(
+                `syncspace-code-${nextLanguage}`
+            );
+
+        const nextCode =
+            savedCode ??
+            languageConfig[nextLanguage]
+                ?.template ??
+            "";
+
         setLanguage(nextLanguage);
         setCode(nextCode);
-        codeRef.current = nextCode;
-        languageRef.current = nextLanguage;
-        setSaved(false);
-        publishCode(nextCode, nextLanguage);
+        setCodeSaved(false);
+
+        if (
+            socket &&
+            socket.connected &&
+            roomId
+        ) {
+            socket.emit("code-change", {
+                roomId,
+                code: nextCode,
+            });
+        }
     };
 
-    const saveDraft = () => {
-        localStorage.setItem(`syncspace-code-${language}`, code);
-        setSaved(true);
+    // =====================================================
+    // SAVE
+    // =====================================================
+
+    const saveCode = () => {
+        localStorage.setItem(
+            `syncspace-code-${language}`,
+            code
+        );
+
+        setCodeSaved(true);
     };
+
+    // =====================================================
+    // MONACO MOUNT
+    // =====================================================
+
+    const handleEditorMount = (
+        editor
+    ) => {
+        setEditorInstance(editor);
+
+        editor.focus();
+    };
+
+    // =====================================================
+    // LANGUAGE UPDATE
+    // =====================================================
+
+    useEffect(() => {
+        if (!editorInstance) {
+            return;
+        }
+
+        const config =
+            languageConfig[language];
+
+        if (!config) {
+            return;
+        }
+
+        const model =
+            editorInstance.getModel();
+
+        if (model) {
+            window.monaco?.editor
+                ?.setModelLanguage(
+                    model,
+                    config.monacoLanguage
+                );
+        }
+    }, [
+        language,
+        editorInstance,
+    ]);
+
+    // =====================================================
+    // UI
+    // =====================================================
 
     return (
-        <section className="code-editor-panel" aria-label="Code editor">
-            <header className="code-editor-header">
+        <section
+            className="floating-code-editor"
+            style={{
+                width: `${codePanelWidth}px`,
+            }}
+            aria-label="Code editor"
+        >
+            {/* RESIZE HANDLE */}
+
+            <button
+                type="button"
+                className="code-resize-handle"
+                onPointerDown={() => {
+                    codeResizeRef.current =
+                        true;
+
+                    document.body.style.cursor =
+                        "col-resize";
+                }}
+                title="Drag to resize code panel"
+                aria-label="Resize code panel"
+            >
+                <span>⟷</span>
+            </button>
+
+            {/* HEADER */}
+
+            <div className="floating-code-header">
                 <div>
-                    <span className="panel-eyebrow">Shared workspace</span>
-                    <h2>Code editor</h2>
+                    <span>
+                        CODE
+                    </span>
+
+                    <strong>
+                        Interview Editor
+                    </strong>
                 </div>
-                <div className="editor-actions">
-                    <select
-                        aria-label="Programming language"
-                        value={language}
-                        onChange={changeLanguage}
+
+                <div className="code-actions">
+                    <button
+                        type="button"
+                        className="code-close"
+                        onClick={() =>
+                            setIsCodeOpen(
+                                false
+                            )
+                        }
+                        title="Close code editor"
+                        aria-label="Close code editor"
                     >
-                        <option>JavaScript</option>
-                        <option>TypeScript</option>
-                        <option>Python</option>
-                        <option>JSON</option>
+                        ×
+                    </button>
+
+                    <select
+                        value={language}
+                        onChange={
+                            changeLanguage
+                        }
+                    >
+                        <option>
+                            JavaScript
+                        </option>
+
+                        <option>
+                            TypeScript
+                        </option>
+
+                        <option>
+                            Python
+                        </option>
+
+                        <option>
+                            JSON
+                        </option>
                     </select>
-                    <button type="button" className="editor-save" onClick={saveDraft}>
-                        {saved ? "Saved" : "Save draft"}
+
+                    <button
+                        type="button"
+                        onClick={saveCode}
+                    >
+                        {codeSaved
+                            ? "✓ Saved"
+                            : "Save"}
                     </button>
                 </div>
-            </header>
-
-            <div className="editor-statusbar">
-                <span className="editor-status-dot" />
-                Shared across room tabs
-                <span className="editor-language">{language}</span>
             </div>
 
-            <div className="editor-surface">
-                <div className="line-numbers" aria-hidden="true">
-                    {code.split("\n").map((_, index) => <span key={index}>{index + 1}</span>)}
-                </div>
-                <textarea
+            {/* STATUS */}
+
+            <div className="code-status">
+                <span />
+
+                Shared coding panel
+
+                <b>
+                    {language}
+                </b>
+            </div>
+
+            {/* MONACO */}
+
+            <div className="code-body">
+                <Editor
+                    height="100%"
+                    width="100%"
+                    language={
+                        languageConfig[
+                            language
+                        ]?.monacoLanguage ??
+                        "javascript"
+                    }
+                    theme="vs-dark"
                     value={code}
                     onChange={updateCode}
-                    spellCheck="false"
-                    aria-label="Code"
+                    onMount={
+                        handleEditorMount
+                    }
+                    options={{
+                        automaticLayout: true,
+
+                        minimap: {
+                            enabled: true,
+                        },
+
+                        fontSize: 14,
+
+                        lineNumbers: "on",
+
+                        wordWrap: "on",
+
+                        tabSize: 4,
+
+                        insertSpaces: true,
+
+                        folding: true,
+
+                        bracketPairColorization: {
+                            enabled: true,
+                        },
+
+                        suggestOnTriggerCharacters:
+                            true,
+
+                        quickSuggestions: true,
+
+                        smoothScrolling: true,
+
+                        cursorBlinking:
+                            "smooth",
+
+                        padding: {
+                            top: 10,
+                            bottom: 10,
+                        },
+
+                        scrollBeyondLastLine:
+                            false,
+                    }}
                 />
             </div>
         </section>

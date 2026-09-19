@@ -110,6 +110,33 @@ export const initializeSocket = (io) => {
             });
         });
         // ==========================================
+// CODE EDITOR SYNC
+// ==========================================
+
+socket.on("code-change", ({ roomId, code }) => {
+
+    if (!roomId) return;
+
+    if (typeof code !== "string") return;
+
+    const users = roomUsers.get(roomId);
+
+    if (!users || !users.has(socket.id)) return;
+
+    // Store latest code for this room
+    roomCode.set(roomId, code);
+
+    // Send the change to everyone else in the room
+    socket.to(roomId).emit("code-change", {
+        roomId,
+        code,
+        socketId: socket.id,
+        userId: socket.user.id,
+        name: socket.user.name
+    });
+
+});
+        // ==========================================
         // DISCONNECT
         // ==========================================
 

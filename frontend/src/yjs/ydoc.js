@@ -1,19 +1,84 @@
+
 import * as Y from "yjs";
+import socket from "../socket";
 
 const ydoc = new Y.Doc();
 
-// Collaborative source code
 const code = ydoc.getText("code");
-
-// Collaborative whiteboard objects
 const whiteboard = ydoc.getArray("whiteboard");
-
-// Room-level metadata/settings
 const room = ydoc.getMap("room");
-console.log("Yjs document:", ydoc);
-console.log("Code:", code.toString());
-console.log("Whiteboard:", whiteboard.toJSON());
-console.log("Room:", room.toJSON());
+
+/*
+ * Prevent receiving our own update and
+ * immediately sending it back.
+ */
+let applyingRemoteUpdate = false;
+
+/*
+ * Local Yjs change
+ *
+ * Whenever Y.Doc changes locally,
+ * encode the change and send it
+ * through Socket.IO.
+ */
+ydoc.on("update", (update, origin) => {
+    if (origin === "remote") {
+        return;
+    }
+
+    if (applyingRemoteUpdate) {
+        return;
+    }
+
+    socket.emit("yjs-update", {
+        roomId: room.get("roomId"),
+        update: Array.from(update),
+    });
+});
+
+/*
+ * Receive Yjs update from server.
+ */
+socket.on(
+    "yjs-update",
+    ({ update }) => {
+        if (!update) {
+            return;
+        }
+
+        try {
+            applyingRemoteUpdate = true;
+
+            Y.applyUpdate(
+                ydoc,
+                new Uint8Array(update),
+                "remote"
+            );
+        } finally {
+            applyingRemoteUpdate = false;
+        }
+    }
+);
+
+console.log(
+    "Yjs document:",
+    ydoc
+);
+
+console.log(
+    "Code:",
+    code.toString()
+);
+
+console.log(
+    "Whiteboard:",
+    whiteboard.toJSON()
+);
+
+console.log(
+    "Room:",
+    room.toJSON()
+);
 
 export {
     ydoc,
@@ -21,3 +86,4 @@ export {
     whiteboard,
     room,
 };
+

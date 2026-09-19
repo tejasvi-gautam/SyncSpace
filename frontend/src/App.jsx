@@ -1,4 +1,6 @@
+
 import "./App.css";
+
 import { Routes, Route, Navigate } from "react-router-dom";
 
 import Home from "./pages/Home";
@@ -12,7 +14,7 @@ function ProtectedRoom() {
     return isAuthenticated ? (
         <Whiteboard />
     ) : (
-        <Navigate to="/" replace />
+        <Navigate to="/login" replace />
     );
 }
 
@@ -20,17 +22,31 @@ function App() {
     return (
         <div className="app">
             <Routes>
-                <Route path="/" element={<Home />} />
+                {/* Public landing page */}
+                <Route
+                    path="/"
+                    element={<Home />}
+                />
 
-                <Route path="/login" element={<Login />} />
+                {/* Authentication */}
+                <Route
+                    path="/login"
+                    element={<Login />}
+                />
 
-                <Route path="/home" element={<Home />} />
+                {/* Authenticated dashboard */}
+                <Route
+                    path="/home"
+                    element={<Home />}
+                />
 
+                {/* Protected collaborative room */}
                 <Route
                     path="/room/:roomId"
                     element={<ProtectedRoom />}
                 />
 
+                {/* Unknown route */}
                 <Route
                     path="*"
                     element={<Navigate to="/" replace />}

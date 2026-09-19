@@ -1,3 +1,5 @@
+import CodeEditor from "./CodeEditor";
+
 import {
     useCallback,
     useEffect,
@@ -5,53 +7,23 @@ import {
     useState,
 } from "react";
 
+import { useParams } from "react-router-dom";
+
 import { useSyncSpaceStore } from "../store/syncSpaceStore";
 import socket from "../socket";
 
-const languageTemplates = {
-    JavaScript: `// SyncSpace interview workspace
+function Whiteboard() {
+    // =====================================================
+    // ROOM
+    // =====================================================
 
-function solveProblem(input) {
-    return input.trim();
-}
+    const { roomId } = useParams();
 
-const result = solveProblem("Build together");
-
-console.log(result);`,
-
-    TypeScript: `// SyncSpace interview workspace
-
-type Input = string;
-
-function solveProblem(input: Input): Input {
-    return input.trim();
-}
-
-console.log(solveProblem("Build together"));`,
-
-    Python: `# SyncSpace interview workspace
-
-def solve_problem(input_text):
-    return input_text.strip()
-
-result = solve_problem("Build together")
-
-print(result)`,
-
-    JSON: `{
-  "project": "SyncSpace",
-  "workspace": "Interview",
-  "status": "shared"
-}`,
-};
-
-function Whiteboard({ roomId = "ROOM" }) {
     const canvasRef = useRef(null);
-    const channelRef = useRef(null);
 
     const objectsRef = useRef([]);
-    const historyRef = useRef([]);
-    const historyIndexRef = useRef(-1);
+    const historyRef = useRef([[]]);
+    const historyIndexRef = useRef(0);
 
     const drawingRef = useRef(false);
     const currentObjectRef = useRef(null);
@@ -70,10 +42,16 @@ function Whiteboard({ roomId = "ROOM" }) {
 
     const [historyVersion, setHistoryVersion] =
         useState(0);
+    
 
-    const [code, setCode] = useState(
-        languageTemplates.JavaScript
-    );
+    const [showUserRoster, setShowUserRoster] =
+        useState(false);
+
+    // =====================================================
+    // CODE EDITOR STATE
+    // =====================================================
+
+    const [code, setCode] = useState("");
 
     const [language, setLanguage] =
         useState("JavaScript");
@@ -84,28 +62,34 @@ function Whiteboard({ roomId = "ROOM" }) {
     const [isCodeOpen, setIsCodeOpen] =
         useState(false);
 
-    const [showUserRoster, setShowUserRoster] =
-        useState(false);
-
     const [codePanelWidth, setCodePanelWidth] =
         useState(430);
 
     const codeResizeRef = useRef(false);
 
+    // =====================================================
+    // CURRENT USER
+    // =====================================================
+
     const [currentUser] = useState(() => {
-        const name = localStorage.getItem("syncspace_username") || "You";
-        const role = localStorage.getItem("syncspace_role") || "Collaborator";
+        const name =
+            localStorage.getItem(
+                "syncspace_username"
+            ) || "You";
+
+        const role =
+            localStorage.getItem(
+                "syncspace_role"
+            ) || "Collaborator";
 
         return {
-            id: sessionStorage.getItem("syncspace_user_id") || `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             name,
             role,
         };
     });
 
-    const [activeUsers, setActiveUsers] = useState([
-        { ...currentUser, self: true },
-    ]);
+    const [activeUsers, setActiveUsers] =
+        useState([]);
 
     // =====================================================
     // STORE
@@ -188,12 +172,54 @@ function Whiteboard({ roomId = "ROOM" }) {
     };
 
     // =====================================================
-    // BROADCAST
+    // SOCKET PUBLISH
     // =====================================================
 
-    const publish = useCallback((message) => {
-        channelRef.current?.postMessage(message);
-    }, []);
+    const publishWhiteboardObject =
+        useCallback(
+            (object) => {
+                if (
+                    !socket.connected ||
+                    !roomId
+                ) {
+                    return;
+                }
+
+                socket.emit(
+                    "whiteboard-event",
+                    {
+                        roomId,
+                        type:
+                            "whiteboard-object",
+                        item: object,
+                    }
+                );
+            },
+            [roomId]
+        );
+
+    const publishWhiteboardState =
+        useCallback(
+            (objects) => {
+                if (
+                    !socket.connected ||
+                    !roomId
+                ) {
+                    return;
+                }
+
+                socket.emit(
+                    "whiteboard-event",
+                    {
+                        roomId,
+                        type:
+                            "whiteboard-state",
+                        item: objects,
+                    }
+                );
+            },
+            [roomId]
+        );
 
     // =====================================================
     // HISTORY
@@ -201,7 +227,9 @@ function Whiteboard({ roomId = "ROOM" }) {
 
     const saveHistory = useCallback(() => {
         const snapshot = JSON.parse(
-            JSON.stringify(objectsRef.current)
+            JSON.stringify(
+                objectsRef.current
+            )
         );
 
         const index =
@@ -229,6 +257,10 @@ function Whiteboard({ roomId = "ROOM" }) {
 
     const drawObject = useCallback(
         (context, object) => {
+            if (!object) {
+                return;
+            }
+
             context.save();
 
             context.lineWidth =
@@ -238,14 +270,11 @@ function Whiteboard({ roomId = "ROOM" }) {
                 object.color || "#111827";
 
             context.fillStyle =
-                object.fill || "transparent";
+                object.fill ||
+                "transparent";
 
             context.lineCap = "round";
             context.lineJoin = "round";
-
-            // -------------------------
-            // PEN / ERASER
-            // -------------------------
 
             if (object.type === "stroke") {
                 const points =
@@ -288,10 +317,6 @@ function Whiteboard({ roomId = "ROOM" }) {
                 return;
             }
 
-            // -------------------------
-            // LINE
-            // -------------------------
-
             if (object.type === "line") {
                 context.beginPath();
 
@@ -310,10 +335,6 @@ function Whiteboard({ roomId = "ROOM" }) {
                 context.restore();
                 return;
             }
-
-            // -------------------------
-            // ARROW
-            // -------------------------
 
             if (object.type === "arrow") {
                 const angle =
@@ -382,19 +403,15 @@ function Whiteboard({ roomId = "ROOM" }) {
                 context.closePath();
 
                 context.fillStyle =
-                    object.color;
+                    object.color ||
+                    "#111827";
 
                 context.fill();
-
                 context.stroke();
 
                 context.restore();
                 return;
             }
-
-            // -------------------------
-            // RECTANGLE
-            // -------------------------
 
             if (
                 object.type ===
@@ -426,10 +443,6 @@ function Whiteboard({ roomId = "ROOM" }) {
                 context.restore();
                 return;
             }
-
-            // -------------------------
-            // CIRCLE
-            // -------------------------
 
             if (
                 object.type ===
@@ -479,16 +492,51 @@ function Whiteboard({ roomId = "ROOM" }) {
                 return;
             }
 
-            if (object.type === "triangle") {
-                const left = Math.min(object.x1, object.x2);
-                const right = Math.max(object.x1, object.x2);
-                const top = Math.min(object.y1, object.y2);
-                const bottom = Math.max(object.y1, object.y2);
+            if (
+                object.type ===
+                "triangle"
+            ) {
+                const left =
+                    Math.min(
+                        object.x1,
+                        object.x2
+                    );
+
+                const right =
+                    Math.max(
+                        object.x1,
+                        object.x2
+                    );
+
+                const top =
+                    Math.min(
+                        object.y1,
+                        object.y2
+                    );
+
+                const bottom =
+                    Math.max(
+                        object.y1,
+                        object.y2
+                    );
 
                 context.beginPath();
-                context.moveTo((left + right) / 2, top);
-                context.lineTo(right, bottom);
-                context.lineTo(left, bottom);
+
+                context.moveTo(
+                    (left + right) / 2,
+                    top
+                );
+
+                context.lineTo(
+                    right,
+                    bottom
+                );
+
+                context.lineTo(
+                    left,
+                    bottom
+                );
+
                 context.closePath();
 
                 if (object.fill) {
@@ -496,24 +544,30 @@ function Whiteboard({ roomId = "ROOM" }) {
                 }
 
                 context.stroke();
+
                 context.restore();
                 return;
             }
 
-            // -------------------------
-            // TEXT
-            // -------------------------
-
             if (object.type === "text") {
+                const text =
+                    typeof object.text ===
+                    "string"
+                        ? object.text
+                        : "";
+
+                const size =
+                    object.size || 24;
+
                 context.font =
-                    `${object.size || 24}px Inter, sans-serif`;
+                    `${size}px Inter, sans-serif`;
 
                 context.fillStyle =
                     object.color ||
                     "#111827";
 
                 context.fillText(
-                    object.text,
+                    text,
                     object.x,
                     object.y
                 );
@@ -521,10 +575,6 @@ function Whiteboard({ roomId = "ROOM" }) {
                 context.restore();
                 return;
             }
-
-            // -------------------------
-            // STICKY NOTE
-            // -------------------------
 
             if (
                 object.type ===
@@ -546,16 +596,20 @@ function Whiteboard({ roomId = "ROOM" }) {
                     context.roundRect(
                         object.x,
                         object.y,
-                        object.width,
-                        object.height,
+                        object.width ||
+                            190,
+                        object.height ||
+                            135,
                         12
                     );
                 } else {
                     context.rect(
                         object.x,
                         object.y,
-                        object.width,
-                        object.height
+                        object.width ||
+                            190,
+                        object.height ||
+                            135
                     );
                 }
 
@@ -568,12 +622,13 @@ function Whiteboard({ roomId = "ROOM" }) {
                 context.font =
                     "15px Inter, sans-serif";
 
-                const lines =
-                    object.text.split(
-                        "\n"
-                    );
+                const text =
+                    typeof object.text ===
+                    "string"
+                        ? object.text
+                        : "";
 
-                lines.forEach(
+                text.split("\n").forEach(
                     (line, index) => {
                         context.fillText(
                             line,
@@ -601,6 +656,10 @@ function Whiteboard({ roomId = "ROOM" }) {
 
     const getBounds = useCallback(
         (object) => {
+            if (!object) {
+                return null;
+            }
+
             if (
                 [
                     "line",
@@ -643,26 +702,33 @@ function Whiteboard({ roomId = "ROOM" }) {
                 object.type ===
                 "text"
             ) {
+                const text =
+                    typeof object.text ===
+                    "string"
+                        ? object.text
+                        : "";
+
+                const size =
+                    object.size || 24;
+
                 return {
                     x:
                         object.x - 5,
 
                     y:
                         object.y -
-                        object.size,
+                        size,
 
                     width:
                         Math.max(
                             40,
-                            object.text
-                                .length *
-                                object.size *
+                            text.length *
+                                size *
                                 0.55
                         ),
 
                     height:
-                        object.size +
-                        10,
+                        size + 10,
                 };
             }
 
@@ -678,12 +744,12 @@ function Whiteboard({ roomId = "ROOM" }) {
                         object.y - 5,
 
                     width:
-                        object.width +
-                        10,
+                        (object.width ||
+                            190) + 10,
 
                     height:
-                        object.height +
-                        10,
+                        (object.height ||
+                            135) + 10,
                 };
             }
 
@@ -774,7 +840,6 @@ function Whiteboard({ roomId = "ROOM" }) {
             }
         );
 
-        // Selection
         if (selectedObjectId) {
             const selected =
                 objectsRef.current.find(
@@ -785,9 +850,7 @@ function Whiteboard({ roomId = "ROOM" }) {
 
             if (selected) {
                 const bounds =
-                    getBounds(
-                        selected
-                    );
+                    getBounds(selected);
 
                 if (bounds) {
                     context.save();
@@ -809,9 +872,7 @@ function Whiteboard({ roomId = "ROOM" }) {
                         bounds.height
                     );
 
-                    context.setLineDash(
-                        []
-                    );
+                    context.setLineDash([]);
 
                     context.fillStyle =
                         "#ffffff";
@@ -819,30 +880,74 @@ function Whiteboard({ roomId = "ROOM" }) {
                     context.strokeStyle =
                         "#6366f1";
 
-                    if (selected.type === "arrow") {
+                    if (
+                        selected.type ===
+                        "arrow"
+                    ) {
                         [
-                            [selected.x1, selected.y1],
-                            [selected.x2, selected.y2],
-                        ].forEach(([x, y]) => {
-                            context.beginPath();
-                            context.arc(x, y, 6, 0, Math.PI * 2);
-                            context.fill();
-                            context.stroke();
-                        });
+                            [
+                                selected.x1,
+                                selected.y1,
+                            ],
+                            [
+                                selected.x2,
+                                selected.y2,
+                            ],
+                        ].forEach(
+                            ([x, y]) => {
+                                context.beginPath();
+
+                                context.arc(
+                                    x,
+                                    y,
+                                    6,
+                                    0,
+                                    Math.PI * 2
+                                );
+
+                                context.fill();
+                                context.stroke();
+                            }
+                        );
                     } else {
                         const handles = [
-                            [bounds.x, bounds.y],
-                            [bounds.x + bounds.width, bounds.y],
-                            [bounds.x, bounds.y + bounds.height],
-                            [bounds.x + bounds.width, bounds.y + bounds.height],
+                            [
+                                bounds.x,
+                                bounds.y,
+                            ],
+                            [
+                                bounds.x +
+                                    bounds.width,
+                                bounds.y,
+                            ],
+                            [
+                                bounds.x,
+                                bounds.y +
+                                    bounds.height,
+                            ],
+                            [
+                                bounds.x +
+                                    bounds.width,
+                                bounds.y +
+                                    bounds.height,
+                            ],
                         ];
 
-                        handles.forEach(([x, y]) => {
-                            context.beginPath();
-                            context.rect(x - 4, y - 4, 8, 8);
-                            context.fill();
-                            context.stroke();
-                        });
+                        handles.forEach(
+                            ([x, y]) => {
+                                context.beginPath();
+
+                                context.rect(
+                                    x - 4,
+                                    y - 4,
+                                    8,
+                                    8
+                                );
+
+                                context.fill();
+                                context.stroke();
+                            }
+                        );
                     }
 
                     context.restore();
@@ -893,8 +998,8 @@ function Whiteboard({ roomId = "ROOM" }) {
     const findObjectAt = (point) => {
         for (
             let i =
-                objectsRef.current
-                    .length - 1;
+                objectsRef.current.length -
+                1;
             i >= 0;
             i--
         ) {
@@ -925,22 +1030,40 @@ function Whiteboard({ roomId = "ROOM" }) {
         return null;
     };
 
-    const findResizeHandle = (point, bounds) => {
+    // =====================================================
+    // RESIZE HANDLE
+    // =====================================================
+
+    const findResizeHandle = (
+        point,
+        bounds
+    ) => {
         if (!bounds) {
             return null;
         }
 
-        const selected = selectedObjectRef.current;
+        const selected =
+            selectedObjectRef.current;
 
-        if (selected?.type === "arrow") {
-            const startDistance = Math.hypot(
-                point.x - selected.x1,
-                point.y - selected.y1
-            );
-            const endDistance = Math.hypot(
-                point.x - selected.x2,
-                point.y - selected.y2
-            );
+        if (
+            selected?.type ===
+            "arrow"
+        ) {
+            const startDistance =
+                Math.hypot(
+                    point.x -
+                        selected.x1,
+                    point.y -
+                        selected.y1
+                );
+
+            const endDistance =
+                Math.hypot(
+                    point.x -
+                        selected.x2,
+                    point.y -
+                        selected.y2
+                );
 
             if (startDistance <= 14) {
                 return "start";
@@ -954,15 +1077,44 @@ function Whiteboard({ roomId = "ROOM" }) {
         }
 
         const handles = {
-            nw: [bounds.x, bounds.y],
-            ne: [bounds.x + bounds.width, bounds.y],
-            sw: [bounds.x, bounds.y + bounds.height],
-            se: [bounds.x + bounds.width, bounds.y + bounds.height],
+            nw: [
+                bounds.x,
+                bounds.y,
+            ],
+            ne: [
+                bounds.x +
+                    bounds.width,
+                bounds.y,
+            ],
+            sw: [
+                bounds.x,
+                bounds.y +
+                    bounds.height,
+            ],
+            se: [
+                bounds.x +
+                    bounds.width,
+                bounds.y +
+                    bounds.height,
+            ],
         };
 
-        return Object.entries(handles).find(([, [x, y]]) =>
-            Math.abs(point.x - x) <= 12 && Math.abs(point.y - y) <= 12
-        )?.[0] || null;
+        return (
+            Object.entries(
+                handles
+            ).find(
+                ([
+                    ,
+                    [x, y],
+                ]) =>
+                    Math.abs(
+                        point.x - x
+                    ) <= 12 &&
+                    Math.abs(
+                        point.y - y
+                    ) <= 12
+            )?.[0] || null
+        );
     };
 
     // =====================================================
@@ -970,26 +1122,35 @@ function Whiteboard({ roomId = "ROOM" }) {
     // =====================================================
 
     const startDrawing = (event) => {
-        event.currentTarget
-            .setPointerCapture?.(
-                event.pointerId
-            );
+        event.currentTarget.setPointerCapture?.(
+            event.pointerId
+        );
 
         const point =
             getPosition(event);
 
-        // -------------------------
-        // SELECT
-        // -------------------------
-
         if (tool === "select") {
-            if (selectedObjectRef.current) {
-                const selectedBounds = getBounds(selectedObjectRef.current);
-                const resizeHandle = findResizeHandle(point, selectedBounds);
+            if (
+                selectedObjectRef.current
+            ) {
+                const selectedBounds =
+                    getBounds(
+                        selectedObjectRef.current
+                    );
+
+                const resizeHandle =
+                    findResizeHandle(
+                        point,
+                        selectedBounds
+                    );
 
                 if (resizeHandle) {
-                    resizeHandleRef.current = resizeHandle;
-                    drawingRef.current = true;
+                    resizeHandleRef.current =
+                        resizeHandle;
+
+                    drawingRef.current =
+                        true;
+
                     return;
                 }
             }
@@ -1029,7 +1190,8 @@ function Whiteboard({ roomId = "ROOM" }) {
                         baseY,
                 };
 
-                    resizeHandleRef.current = null;
+                resizeHandleRef.current =
+                    null;
 
                 drawingRef.current =
                     true;
@@ -1047,10 +1209,6 @@ function Whiteboard({ roomId = "ROOM" }) {
             return;
         }
 
-        // -------------------------
-        // TEXT
-        // -------------------------
-
         if (tool === "text") {
             setTextEditor({
                 x: point.x,
@@ -1061,14 +1219,7 @@ function Whiteboard({ roomId = "ROOM" }) {
             return;
         }
 
-        // -------------------------
-        // STICKY
-        // -------------------------
-
-        if (
-            tool ===
-            "sticky"
-        ) {
+        if (tool === "sticky") {
             setStickyEditor({
                 x: point.x,
                 y: point.y,
@@ -1078,12 +1229,7 @@ function Whiteboard({ roomId = "ROOM" }) {
             return;
         }
 
-        // -------------------------
-        // DRAW
-        // -------------------------
-
-        drawingRef.current =
-            true;
+        drawingRef.current = true;
 
         let object;
 
@@ -1098,10 +1244,8 @@ function Whiteboard({ roomId = "ROOM" }) {
                 color,
 
                 width:
-                    tool ===
-                    "eraser"
-                        ? brushSize *
-                          4
+                    tool === "eraser"
+                        ? brushSize * 4
                         : brushSize,
 
                 points: [point],
@@ -1131,7 +1275,7 @@ function Whiteboard({ roomId = "ROOM" }) {
     };
 
     // =====================================================
-    // MOVE / DRAW
+    // MOVE DRAWING
     // =====================================================
 
     const moveDrawing = (event) => {
@@ -1142,10 +1286,6 @@ function Whiteboard({ roomId = "ROOM" }) {
         const point =
             getPosition(event);
 
-        // -------------------------
-        // MOVE SELECTED
-        // -------------------------
-
         if (
             tool === "select" &&
             selectedObjectRef.current
@@ -1153,30 +1293,82 @@ function Whiteboard({ roomId = "ROOM" }) {
             const object =
                 selectedObjectRef.current;
 
-            if (resizeHandleRef.current && [
-                "line",
-                "arrow",
-                "rectangle",
-                "circle",
-                "triangle",
-            ].includes(object.type)) {
-                const handle = resizeHandleRef.current;
+            if (
+                resizeHandleRef.current &&
+                [
+                    "line",
+                    "arrow",
+                    "rectangle",
+                    "circle",
+                    "triangle",
+                ].includes(
+                    object.type
+                )
+            ) {
+                const handle =
+                    resizeHandleRef.current;
 
-                if (object.type === "arrow") {
-                    if (handle === "start") {
-                        object.x1 = point.x;
-                        object.y1 = point.y;
+                if (
+                    object.type ===
+                    "arrow"
+                ) {
+                    if (
+                        handle ===
+                        "start"
+                    ) {
+                        object.x1 =
+                            point.x;
+
+                        object.y1 =
+                            point.y;
                     }
 
-                    if (handle === "end") {
-                        object.x2 = point.x;
-                        object.y2 = point.y;
+                    if (
+                        handle ===
+                        "end"
+                    ) {
+                        object.x2 =
+                            point.x;
+
+                        object.y2 =
+                            point.y;
                     }
                 } else {
-                    if (handle.includes("w")) object.x1 = point.x;
-                    if (handle.includes("e")) object.x2 = point.x;
-                    if (handle.includes("n")) object.y1 = point.y;
-                    if (handle.includes("s")) object.y2 = point.y;
+                    if (
+                        handle.includes(
+                            "w"
+                        )
+                    ) {
+                        object.x1 =
+                            point.x;
+                    }
+
+                    if (
+                        handle.includes(
+                            "e"
+                        )
+                    ) {
+                        object.x2 =
+                            point.x;
+                    }
+
+                    if (
+                        handle.includes(
+                            "n"
+                        )
+                    ) {
+                        object.y1 =
+                            point.y;
+                    }
+
+                    if (
+                        handle.includes(
+                            "s"
+                        )
+                    ) {
+                        object.y2 =
+                            point.y;
+                    }
                 }
 
                 redraw();
@@ -1238,7 +1430,11 @@ function Whiteboard({ roomId = "ROOM" }) {
                 "stroke"
             ) {
                 const first =
-                    object.points[0];
+                    object.points?.[0];
+
+                if (!first) {
+                    return;
+                }
 
                 const moveX =
                     newX - first.x;
@@ -1264,10 +1460,6 @@ function Whiteboard({ roomId = "ROOM" }) {
             return;
         }
 
-        // -------------------------
-        // DRAW
-        // -------------------------
-
         const object =
             currentObjectRef.current;
 
@@ -1291,7 +1483,7 @@ function Whiteboard({ roomId = "ROOM" }) {
     };
 
     // =====================================================
-    // STOP
+    // STOP DRAWING
     // =====================================================
 
     const stopDrawing = (event) => {
@@ -1303,19 +1495,14 @@ function Whiteboard({ roomId = "ROOM" }) {
             event.pointerId
         );
 
-        drawingRef.current =
-            false;
+        drawingRef.current = false;
 
         if (tool === "select") {
             saveHistory();
 
-            publish({
-                type:
-                    "whiteboard-state",
-
-                objects:
-                    objectsRef.current,
-            });
+            publishWhiteboardState(
+                objectsRef.current
+            );
 
             selectedObjectRef.current =
                 null;
@@ -1333,12 +1520,9 @@ function Whiteboard({ roomId = "ROOM" }) {
             currentObjectRef.current;
 
         if (object) {
-            publish({
-                type:
-                    "whiteboard-object",
-
-                object,
-            });
+            publishWhiteboardObject(
+                object
+            );
 
             saveHistory();
         }
@@ -1378,12 +1562,9 @@ function Whiteboard({ roomId = "ROOM" }) {
             object
         );
 
-        publish({
-            type:
-                "whiteboard-object",
-
-            object,
-        });
+        publishWhiteboardObject(
+            object
+        );
 
         saveHistory();
 
@@ -1426,12 +1607,9 @@ function Whiteboard({ roomId = "ROOM" }) {
             object
         );
 
-        publish({
-            type:
-                "whiteboard-object",
-
-            object,
-        });
+        publishWhiteboardObject(
+            object
+        );
 
         saveHistory();
 
@@ -1444,37 +1622,34 @@ function Whiteboard({ roomId = "ROOM" }) {
     // DELETE
     // =====================================================
 
-    const deleteSelected = useCallback(() => {
-        if (!selectedObjectId) {
-            return;
-        }
+    const deleteSelected =
+        useCallback(() => {
+            if (!selectedObjectId) {
+                return;
+            }
 
-        objectsRef.current =
-            objectsRef.current.filter(
-                (object) =>
-                    object.id !==
-                    selectedObjectId
+            objectsRef.current =
+                objectsRef.current.filter(
+                    (object) =>
+                        object.id !==
+                        selectedObjectId
+                );
+
+            setSelectedObjectId(null);
+
+            saveHistory();
+
+            publishWhiteboardState(
+                objectsRef.current
             );
 
-        setSelectedObjectId(null);
-
-        saveHistory();
-
-        publish({
-            type:
-                "whiteboard-state",
-
-            objects:
-                objectsRef.current,
-        });
-
-        redraw();
-    }, [
-        selectedObjectId,
-        saveHistory,
-        publish,
-        redraw,
-    ]);
+            redraw();
+        }, [
+            selectedObjectId,
+            saveHistory,
+            publishWhiteboardState,
+            redraw,
+        ]);
 
     // =====================================================
     // CLEAR
@@ -1503,12 +1678,7 @@ function Whiteboard({ roomId = "ROOM" }) {
 
         saveHistory();
 
-        publish({
-            type:
-                "whiteboard-state",
-
-            objects: [],
-        });
+        publishWhiteboardState([]);
 
         redraw();
     };
@@ -1525,8 +1695,7 @@ function Whiteboard({ roomId = "ROOM" }) {
             return;
         }
 
-        historyIndexRef.current -=
-            1;
+        historyIndexRef.current -= 1;
 
         const snapshot =
             historyRef.current[
@@ -1535,25 +1704,19 @@ function Whiteboard({ roomId = "ROOM" }) {
 
         objectsRef.current =
             JSON.parse(
-                JSON.stringify(
-                    snapshot
-                )
+                JSON.stringify(snapshot)
             );
 
         setSelectedObjectId(null);
 
-        publish({
-            type:
-                "whiteboard-state",
-
-            objects:
-                objectsRef.current,
-        });
+        publishWhiteboardState(
+            objectsRef.current
+        );
 
         refresh();
         redraw();
     }, [
-        publish,
+        publishWhiteboardState,
         refresh,
         redraw,
     ]);
@@ -1565,15 +1728,13 @@ function Whiteboard({ roomId = "ROOM" }) {
     const redo = useCallback(() => {
         if (
             historyIndexRef.current >=
-            historyRef.current
-                .length -
+            historyRef.current.length -
                 1
         ) {
             return;
         }
 
-        historyIndexRef.current +=
-            1;
+        historyIndexRef.current += 1;
 
         const snapshot =
             historyRef.current[
@@ -1582,25 +1743,19 @@ function Whiteboard({ roomId = "ROOM" }) {
 
         objectsRef.current =
             JSON.parse(
-                JSON.stringify(
-                    snapshot
-                )
+                JSON.stringify(snapshot)
             );
 
         setSelectedObjectId(null);
 
-        publish({
-            type:
-                "whiteboard-state",
-
-            objects:
-                objectsRef.current,
-        });
+        publishWhiteboardState(
+            objectsRef.current
+        );
 
         refresh();
         redraw();
     }, [
-        publish,
+        publishWhiteboardState,
         refresh,
         redraw,
     ]);
@@ -1656,43 +1811,152 @@ function Whiteboard({ roomId = "ROOM" }) {
     }, [redraw]);
 
     // =====================================================
-    // ROOM CHANNEL
+    // SOCKET ROOM
     // =====================================================
 
     useEffect(() => {
-        if (
-            !roomId ||
-            typeof BroadcastChannel ===
-                "undefined"
-        ) {
-            return undefined;
+        if (!roomId) {
+            return;
         }
 
-        const channel =
-            new BroadcastChannel(
-                `syncspace-room-${roomId}`
-            );
+        const normalizeUser = (user) => {
+            if (!user) {
+                return null;
+            }
 
-        channelRef.current =
-            channel;
+            return {
+                id:
+                    user.userId ??
+                    user.id ??
+                    user.socketId,
 
-        channel.onmessage = (
-            event
+                userId:
+                    user.userId ??
+                    user.id,
+
+                socketId:
+                    user.socketId,
+
+                name:
+                    typeof user.name ===
+                    "string"
+                        ? user.name
+                        : "Unknown user",
+
+                role:
+                    typeof user.role ===
+                    "string"
+                        ? user.role
+                        : "Collaborator",
+            };
+        };
+
+        const handleRoomUsers = (
+            users
         ) => {
-            const message =
-                event.data;
-
-            if (message.type === "presence-join" || message.type === "presence-ping") {
-                setActiveUsers((users) => {
-                    const nextUser = { ...message.user, self: false };
-                    const withoutUser = users.filter((user) => user.id !== nextUser.id);
-                    return [...withoutUser, nextUser];
-                });
+            if (!Array.isArray(users)) {
+                setActiveUsers([]);
                 return;
             }
 
-            if (message.type === "presence-leave") {
-                setActiveUsers((users) => users.filter((user) => user.id !== message.userId));
+            const normalized =
+                users
+                    .map(normalizeUser)
+                    .filter(Boolean);
+
+            setActiveUsers(
+                normalized.map(
+                    (user) => ({
+                        ...user,
+
+                        self:
+                            user.userId ===
+                                socket.id ||
+                            user.name ===
+                                currentUser.name,
+                    })
+                )
+            );
+        };
+
+        const handleInitialState = (
+            state
+        ) => {
+            if (!state) {
+                return;
+            }
+
+            if (
+                Array.isArray(
+                    state.whiteboard
+                )
+            ) {
+                const restoredObjects =
+                    state.whiteboard
+                        .map(
+                            (entry) => {
+                                if (
+                                    entry &&
+                                    entry.type ===
+                                        "whiteboard-object" &&
+                                    entry.item
+                                ) {
+                                    return entry.item;
+                                }
+
+                                if (
+                                    entry &&
+                                    entry.item &&
+                                    typeof entry.item ===
+                                        "object"
+                                ) {
+                                    return entry.item;
+                                }
+
+                                return entry;
+                            }
+                        )
+                        .filter(Boolean);
+
+                objectsRef.current =
+                    restoredObjects;
+
+                historyRef.current = [
+                    JSON.parse(
+                        JSON.stringify(
+                            restoredObjects
+                        )
+                    ),
+                ];
+
+                historyIndexRef.current = 0;
+
+                refresh();
+                redraw();
+            }
+
+            if (
+                typeof state.code ===
+                "string"
+            ) {
+                setCode(state.code);
+            }
+
+            if (
+                Array.isArray(
+                    state.users
+                )
+            ) {
+                handleRoomUsers(
+                    state.users
+                );
+            }
+        };
+
+        const handleWhiteboardEvent = (
+            message
+        ) => {
+            if (!message) {
                 return;
             }
 
@@ -1700,144 +1964,153 @@ function Whiteboard({ roomId = "ROOM" }) {
                 message.type ===
                 "whiteboard-object"
             ) {
+                const object =
+                    message.item;
+
+                if (!object) {
+                    return;
+                }
+
                 const exists =
                     objectsRef.current.some(
-                        (object) =>
-                            object.id ===
-                            message
-                                .object
-                                .id
+                        (existing) =>
+                            existing.id ===
+                            object.id
                     );
 
                 if (!exists) {
                     objectsRef.current.push(
-                        message.object
+                        object
                     );
 
                     redraw();
                 }
+
+                return;
             }
 
             if (
                 message.type ===
                 "whiteboard-state"
             ) {
+                const objects =
+                    Array.isArray(
+                        message.item
+                    )
+                        ? message.item
+                        : [];
+
                 objectsRef.current =
-                    message.objects ||
-                    [];
+                    objects;
 
-                redraw();
+                setSelectedObjectId(
+                    null
+                );
+
+                historyRef.current = [
+                    JSON.parse(
+                        JSON.stringify(
+                            objects
+                        )
+                    ),
+                ];
+
+                historyIndexRef.current = 0;
+
                 refresh();
+                redraw();
+            }
+        };
+
+        const handleCodeChange = (
+            message
+        ) => {
+            if (!message) {
+                return;
             }
 
             if (
-                message.type ===
-                "whiteboard-request-state"
+                typeof message.code !==
+                "string"
             ) {
-                channel.postMessage({
-                    type:
-                        "whiteboard-state",
-
-                    objects:
-                        objectsRef.current,
-                });
+                return;
             }
 
-            if (
-                message.type ===
-                "code-sync-request"
-            ) {
-                channel.postMessage({
-                    type:
-                        "code-sync",
+            setCode(message.code);
+            setCodeSaved(false);
+        };
 
-                    code:
-                        localStorage.getItem(
-                            `syncspace-code-${language}`
-                        ) ||
-                        languageTemplates[
-                            language
-                        ],
-
-                    language,
-                });
-            }
-
-            if (
-                message.type ===
-                "code-sync"
-            ) {
-                setLanguage(
-                    message.language
+        const joinRoom = () => {
+            if (socket.connected) {
+                socket.emit(
+                    "join-room",
+                    roomId
                 );
-
-                setCode(
-                    message.code
-                );
-
-                setCodeSaved(false);
             }
         };
 
-        const handleSocketUsers = (users) => {
-            setActiveUsers(
-                users.map((user) => ({
-                    ...user,
-                    self: user.userId === currentUser.id,
-                }))
-            );
-        };
+        socket.on(
+            "room-users",
+            handleRoomUsers
+        );
 
-        const joinSocketRoom = () => {
-            socket.emit("join-room", roomId);
-        };
+        socket.on(
+            "initial-room-state",
+            handleInitialState
+        );
 
-        socket.on("room-users", handleSocketUsers);
-        socket.on("connect", joinSocketRoom);
+        socket.on(
+            "whiteboard-event",
+            handleWhiteboardEvent
+        );
+
+        socket.on(
+            "code-change",
+            handleCodeChange
+        );
+
+        socket.on(
+            "connect",
+            joinRoom
+        );
+
         if (!socket.connected) {
             socket.connect();
         } else {
-            joinSocketRoom();
+            joinRoom();
         }
 
-        channel.postMessage({
-            type:
-                "whiteboard-request-state",
-        });
-
-        sessionStorage.setItem("syncspace_user_id", currentUser.id);
-        const presenceUser = {
-            id: currentUser.id,
-            name: currentUser.name,
-            role: currentUser.role,
-        };
-
-        channel.postMessage({ type: "presence-join", user: presenceUser });
-        const presenceInterval = window.setInterval(() => {
-            channel.postMessage({ type: "presence-ping", user: presenceUser });
-        }, 10000);
-
-        channel.postMessage({
-            type:
-                "code-sync-request",
-        });
-
         return () => {
-            channel.postMessage({ type: "presence-leave", userId: currentUser.id });
-            window.clearInterval(presenceInterval);
-            socket.off("room-users", handleSocketUsers);
-            socket.off("connect", joinSocketRoom);
-            socket.disconnect();
-            channel.close();
-            channelRef.current =
-                null;
+            socket.off(
+                "room-users",
+                handleRoomUsers
+            );
+
+            socket.off(
+                "initial-room-state",
+                handleInitialState
+            );
+
+            socket.off(
+                "whiteboard-event",
+                handleWhiteboardEvent
+            );
+
+            socket.off(
+                "code-change",
+                handleCodeChange
+            );
+
+            socket.off(
+                "connect",
+                joinRoom
+            );
         };
     }, [
         roomId,
         redraw,
         refresh,
-        language,
-        currentUser,
+        currentUser.name,
     ]);
 
     // =====================================================
@@ -1849,12 +2122,9 @@ function Whiteboard({ roomId = "ROOM" }) {
             historyRef.current
                 .length === 0
         ) {
-            historyRef.current = [
-                [],
-            ];
+            historyRef.current = [[]];
 
-            historyIndexRef.current =
-                0;
+            historyIndexRef.current = 0;
         }
     }, []);
 
@@ -1871,7 +2141,7 @@ function Whiteboard({ roomId = "ROOM" }) {
     ]);
 
     // =====================================================
-    // KEYBOARD SHORTCUTS
+    // KEYBOARD
     // =====================================================
 
     useEffect(() => {
@@ -1993,65 +2263,88 @@ function Whiteboard({ roomId = "ROOM" }) {
     ]);
 
     // =====================================================
-    // CODE EDITOR
+    // SHARE
     // =====================================================
 
-    const updateCode = (event) => {
-        const nextCode =
-            event.target.value;
+    const shareRoom = async () => {
+        const shareText =
+            `Join my SyncSpace workspace. Room ID: ${roomId}`;
 
-        setCode(nextCode);
-
-        setCodeSaved(false);
-
-        publish({
-            type: "code-sync",
-            code: nextCode,
-            language,
-        });
-    };
-
-    const changeLanguage = (
-        event
-    ) => {
-        const nextLanguage =
-            event.target.value;
-
-        const savedCode =
-            localStorage.getItem(
-                `syncspace-code-${nextLanguage}`
+        try {
+            await navigator.clipboard.writeText(
+                shareText
             );
 
-        const nextCode =
-            savedCode ||
-            languageTemplates[
-                nextLanguage
-            ];
-
-        setLanguage(
-            nextLanguage
-        );
-
-        setCode(nextCode);
-
-        setCodeSaved(false);
-
-        publish({
-            type: "code-sync",
-            code: nextCode,
-            language:
-                nextLanguage,
-        });
+            alert(
+                "Room invite copied!"
+            );
+        } catch {
+            alert(
+                `Room ID: ${roomId}`
+            );
+        }
     };
 
-    const saveCode = () => {
-        localStorage.setItem(
-            `syncspace-code-${language}`,
-            code
+    // =====================================================
+    // CODE PANEL RESIZE
+    // =====================================================
+
+    useEffect(() => {
+        const resizeCodePanel = (
+            event
+        ) => {
+            if (
+                !codeResizeRef.current
+            ) {
+                return;
+            }
+
+            const nextWidth =
+                window.innerWidth -
+                event.clientX;
+
+            setCodePanelWidth(
+                Math.min(
+                    760,
+                    Math.max(
+                        320,
+                        nextWidth
+                    )
+                )
+            );
+        };
+
+        const stopResizingCode =
+            () => {
+                codeResizeRef.current =
+                    false;
+
+                document.body.style.cursor =
+                    "";
+            };
+
+        window.addEventListener(
+            "pointermove",
+            resizeCodePanel
         );
 
-        setCodeSaved(true);
-    };
+        window.addEventListener(
+            "pointerup",
+            stopResizingCode
+        );
+
+        return () => {
+            window.removeEventListener(
+                "pointermove",
+                resizeCodePanel
+            );
+
+            window.removeEventListener(
+                "pointerup",
+                stopResizingCode
+            );
+        };
+    }, []);
 
     // =====================================================
     // TOOL BUTTON
@@ -2083,58 +2376,13 @@ function Whiteboard({ roomId = "ROOM" }) {
     );
 
     // =====================================================
-    // SHARE
-    // =====================================================
-
-    const shareRoom = async () => {
-        const shareText =
-            `Join my SyncSpace workspace. Room ID: ${roomId}`;
-
-        try {
-            await navigator.clipboard.writeText(
-                shareText
-            );
-
-            alert(
-                "Room invite copied!"
-            );
-        } catch {
-            alert(
-                `Room ID: ${roomId}`
-            );
-        }
-    };
-
-    useEffect(() => {
-        const resizeCodePanel = (event) => {
-            if (!codeResizeRef.current) return;
-            const nextWidth = window.innerWidth - event.clientX;
-            setCodePanelWidth(Math.min(760, Math.max(320, nextWidth)));
-        };
-
-        const stopResizingCode = () => {
-            codeResizeRef.current = false;
-            document.body.style.cursor = "";
-        };
-
-        window.addEventListener("pointermove", resizeCodePanel);
-        window.addEventListener("pointerup", stopResizingCode);
-        return () => {
-            window.removeEventListener("pointermove", resizeCodePanel);
-            window.removeEventListener("pointerup", stopResizingCode);
-        };
-    }, []);
-
-    // =====================================================
     // UI
     // =====================================================
 
     return (
         <div className="syncspace">
 
-            {/* =================================================
-                TOP BAR
-            ================================================= */}
+            {/* TOP BAR */}
 
             <header className="topbar">
 
@@ -2177,45 +2425,132 @@ function Whiteboard({ roomId = "ROOM" }) {
                         type="button"
                         className="active-users active-users-button"
                         aria-label={`${activeUsers.length} active users`}
-                        aria-expanded={showUserRoster}
-                        onClick={() => setShowUserRoster((value) => !value)}
+                        aria-expanded={
+                            showUserRoster
+                        }
+                        onClick={() =>
+                            setShowUserRoster(
+                                (value) =>
+                                    !value
+                            )
+                        }
                     >
+
                         <div className="avatar-stack">
-                            {activeUsers.slice(0, 4).map((user, index) => (
-                                <span
-                                    className={`user-avatar avatar-${index % 4}`}
-                                    key={user.id}
-                                    title={`${user.name} · ${user.role}`}
-                                >
-                                    {user.name.slice(0, 1).toUpperCase()}
-                                </span>
-                            ))}
+
+                            {activeUsers
+                                .slice(0, 4)
+                                .map(
+                                    (
+                                        user,
+                                        index
+                                    ) => (
+                                        <span
+                                            className={`user-avatar avatar-${index % 4}`}
+                                            key={
+                                                user.id ||
+                                                user.socketId ||
+                                                index
+                                            }
+                                            title={`${user.name || "Unknown"} · ${user.role || "Collaborator"}`}
+                                        >
+                                            {(user.name ||
+                                                "?")
+                                                .slice(
+                                                    0,
+                                                    1
+                                                )
+                                                .toUpperCase()}
+                                        </span>
+                                    )
+                                )}
+
                         </div>
-                        <span>{activeUsers.length} active</span>
+
+                        <span>
+                            {activeUsers.length}{" "}
+                            active
+                        </span>
+
                     </button>
 
                     {showUserRoster && (
-                        <div className="user-roster" role="dialog" aria-label="Active users">
+                        <div
+                            className="user-roster"
+                            role="dialog"
+                            aria-label="Active users"
+                        >
+
                             <div className="user-roster-heading">
-                                <strong>In this workspace</strong>
-                                <span>{activeUsers.length} online</span>
+                                <strong>
+                                    In this workspace
+                                </strong>
+
+                                <span>
+                                    {
+                                        activeUsers.length
+                                    }{" "}
+                                    online
+                                </span>
                             </div>
-                            {activeUsers.map((user, index) => (
-                                <div className="roster-user" key={user.id}>
-                                    <span className={`roster-avatar avatar-${index % 4}`}>
-                                        {user.name.slice(0, 1).toUpperCase()}
-                                    </span>
-                                    <span>
-                                        <strong>{user.name}{user.self ? " (you)" : ""}</strong>
-                                        <small>{user.role}</small>
-                                    </span>
-                                    <i />
-                                </div>
-                            ))}
+
+                            {activeUsers.map(
+                                (
+                                    user,
+                                    index
+                                ) => (
+                                    <div
+                                        className="roster-user"
+                                        key={
+                                            user.id ||
+                                            user.socketId ||
+                                            index
+                                        }
+                                    >
+
+                                        <span
+                                            className={`roster-avatar avatar-${index % 4}`}
+                                        >
+                                            {(user.name ||
+                                                "?")
+                                                .slice(
+                                                    0,
+                                                    1
+                                                )
+                                                .toUpperCase()}
+                                        </span>
+
+                                        <span>
+
+                                            <strong>
+                                                {
+                                                    user.name
+                                                }
+
+                                                {user.self
+                                                    ? " (you)"
+                                                    : ""}
+                                            </strong>
+
+                                            <small>
+                                                {
+                                                    user.role
+                                                }
+                                            </small>
+
+                                        </span>
+
+                                        <i />
+
+                                    </div>
+                                )
+                            )}
+
                         </div>
                     )}
 
                     <div className="room-id-display">
+
                         <span>
                             Room
                         </span>
@@ -2223,6 +2558,7 @@ function Whiteboard({ roomId = "ROOM" }) {
                         <strong>
                             {roomId}
                         </strong>
+
                     </div>
 
                     <button
@@ -2239,37 +2575,65 @@ function Whiteboard({ roomId = "ROOM" }) {
 
             </header>
 
-            {/* =================================================
-                MAIN WORKSPACE
-            ================================================= */}
+            {/* MAIN */}
 
             <main className="workspace">
 
-                {/* =================================================
-                    TOOLBAR
-                ================================================= */}
+                {/* TOOLBAR */}
 
                 <aside className="tool-panel">
 
-                    <div className="workspace-modes" aria-label="Workspace pages">
+                    <div
+                        className="workspace-modes"
+                        aria-label="Workspace pages"
+                    >
+
                         <button
                             type="button"
-                            className={!isCodeOpen ? "mode-button active" : "mode-button"}
-                            onClick={() => setIsCodeOpen(false)}
+                            className={
+                                !isCodeOpen
+                                    ? "mode-button active"
+                                    : "mode-button"
+                            }
+                            onClick={() =>
+                                setIsCodeOpen(
+                                    false
+                                )
+                            }
                             title="Canvas page"
                         >
-                            <span>▦</span>
-                            <small>Canvas</small>
+                            <span>
+                                ▦
+                            </span>
+
+                            <small>
+                                Canvas
+                            </small>
                         </button>
+
                         <button
                             type="button"
-                            className={isCodeOpen ? "mode-button active" : "mode-button"}
-                            onClick={() => setIsCodeOpen(true)}
+                            className={
+                                isCodeOpen
+                                    ? "mode-button active"
+                                    : "mode-button"
+                            }
+                            onClick={() =>
+                                setIsCodeOpen(
+                                    true
+                                )
+                            }
                             title="Open code page"
                         >
-                            <span>&lt;/&gt;</span>
-                            <small>Code</small>
+                            <span>
+                                &lt;/&gt;
+                            </span>
+
+                            <small>
+                                Code
+                            </small>
                         </button>
+
                     </div>
 
                     <div className="tool-divider" />
@@ -2367,19 +2731,26 @@ function Whiteboard({ roomId = "ROOM" }) {
                         <button
                             type="button"
                             className="tool code-tool"
-                            onClick={() => setIsCodeOpen(true)}
-                            title="Open and resize code editor"
+                            onClick={() =>
+                                setIsCodeOpen(
+                                    true
+                                )
+                            }
+                            title="Open code editor"
                         >
-                            <span>&lt;/&gt;</span>
-                            <small>Editor</small>
+                            <span>
+                                &lt;/&gt;
+                            </span>
+
+                            <small>
+                                Editor
+                            </small>
                         </button>
 
                         <button
                             type="button"
                             className="tool"
-                            onClick={
-                                undo
-                            }
+                            onClick={undo}
                             title="Undo (Ctrl + Z)"
                         >
                             <span>
@@ -2394,9 +2765,7 @@ function Whiteboard({ roomId = "ROOM" }) {
                         <button
                             type="button"
                             className="tool"
-                            onClick={
-                                redo
-                            }
+                            onClick={redo}
                             title="Redo (Ctrl + Y)"
                         >
                             <span>
@@ -2471,9 +2840,7 @@ function Whiteboard({ roomId = "ROOM" }) {
 
                 </aside>
 
-                {/* =================================================
-                    CANVAS AREA
-                ================================================= */}
+                {/* CANVAS */}
 
                 <section
                     className={
@@ -2492,9 +2859,7 @@ function Whiteboard({ roomId = "ROOM" }) {
                     >
 
                         <canvas
-                            ref={
-                                canvasRef
-                            }
+                            ref={canvasRef}
                             className="whiteboard-canvas"
                             onPointerDown={
                                 startDrawing
@@ -2593,6 +2958,7 @@ function Whiteboard({ roomId = "ROOM" }) {
                                     zoom,
                             }}
                         >
+
                             <textarea
                                 autoFocus
                                 placeholder="Write an interview note..."
@@ -2637,6 +3003,7 @@ function Whiteboard({ roomId = "ROOM" }) {
                                 </button>
 
                             </div>
+
                         </div>
                     )}
 
@@ -2645,150 +3012,39 @@ function Whiteboard({ roomId = "ROOM" }) {
                         Live canvas
                     </div>
 
-                    {/* =================================================
-                        CODE EDITOR
-                    ================================================= */}
+                    {/* =========================================
+                        EXTRACTED CODE EDITOR
+                    ========================================= */}
 
-                    {isCodeOpen && <section className="floating-code-editor" style={{ width: `${codePanelWidth}px` }} aria-label="Code editor">
-
-                        <button
-                            type="button"
-                            className="code-resize-handle"
-                            onPointerDown={() => {
-                                codeResizeRef.current = true;
-                                document.body.style.cursor = "col-resize";
-                            }}
-                            title="Drag to resize code panel"
-                            aria-label="Resize code panel"
-                        >
-                            <span>⟷</span>
-                        </button>
-
-                        <div className="floating-code-header">
-
-                            <div>
-                                <span>
-                                    CODE
-                                </span>
-
-                                <strong>
-                                    Interview Editor
-                                </strong>
-                            </div>
-
-                            <div className="code-actions">
-
-                                <button
-                                    type="button"
-                                    className="code-close"
-                                    onClick={() => setIsCodeOpen(false)}
-                                    title="Close code editor"
-                                    aria-label="Close code editor"
-                                >
-                                    ×
-                                </button>
-
-                                <select
-                                    value={
-                                        language
-                                    }
-                                    onChange={
-                                        changeLanguage
-                                    }
-                                >
-                                    <option>
-                                        JavaScript
-                                    </option>
-
-                                    <option>
-                                        TypeScript
-                                    </option>
-
-                                    <option>
-                                        Python
-                                    </option>
-
-                                    <option>
-                                        JSON
-                                    </option>
-                                </select>
-
-                                <button
-                                    type="button"
-                                    onClick={
-                                        saveCode
-                                    }
-                                >
-                                    {codeSaved
-                                        ? "✓ Saved"
-                                        : "Save"}
-                                </button>
-
-                            </div>
-
-                        </div>
-
-                        <div className="code-status">
-
-                            <span />
-
-                            Shared coding panel
-
-                            <b>
-                                {language}
-                            </b>
-
-                        </div>
-
-                        <div className="code-body">
-
-                            <div
-                                className="code-lines"
-                                aria-hidden="true"
-                            >
-                                {code
-                                    .split(
-                                        "\n"
-                                    )
-                                    .map(
-                                        (
-                                            _,
-                                            index
-                                        ) => (
-                                            <span
-                                                key={
-                                                    index
-                                                }
-                                            >
-                                                {index +
-                                                    1}
-                                            </span>
-                                        )
-                                    )}
-                            </div>
-
-                            <textarea
-                                value={
-                                    code
-                                }
-                                onChange={
-                                    updateCode
-                                }
-                                spellCheck="false"
-                                aria-label="Shared code editor"
-                            />
-
-                        </div>
-
-                    </section>}
+                    {isCodeOpen && (
+                        <CodeEditor
+                            roomId={roomId}
+                            code={code}
+                            setCode={setCode}
+                            language={language}
+                            setLanguage={setLanguage}
+                            codeSaved={codeSaved}
+                            setCodeSaved={
+                                setCodeSaved
+                            }
+                            codePanelWidth={
+                                codePanelWidth
+                            }
+                            codeResizeRef={
+                                codeResizeRef
+                            }
+                            setIsCodeOpen={
+                                setIsCodeOpen
+                            }
+                            socket={socket}
+                        />
+                    )}
 
                 </section>
 
             </main>
 
-            {/* =================================================
-                BOTTOM BAR
-            ================================================= */}
+            {/* BOTTOM BAR */}
 
             <footer className="bottom-bar">
 
@@ -2802,9 +3058,7 @@ function Whiteboard({ roomId = "ROOM" }) {
 
                         <input
                             type="color"
-                            value={
-                                color
-                            }
+                            value={color}
                             onChange={(
                                 event
                             ) =>

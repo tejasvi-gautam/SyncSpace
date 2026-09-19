@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "./Home.css";
-import LoginModal from "../components/LoginModal";
 
 export default function Home() {
     const navigate = useNavigate();
@@ -11,24 +11,31 @@ export default function Home() {
     );
 
     const [roomId, setRoomId] = useState("");
-    const [role, setRole] = useState("Candidate");
+
+    const [role, setRole] = useState(
+        localStorage.getItem("syncspace_role") || "interviewee"
+    );
+
     const [formError, setFormError] = useState("");
-    const [isSignInOpen, setIsSignInOpen] = useState(false);
 
-    useEffect(() => {
-        const savedRoom = localStorage.getItem("syncspace_room");
+    // ==========================================
+    // CHECK AUTHENTICATION
+    // ==========================================
 
-        if (savedRoom) {
-            setRoomId(savedRoom);
+    const isAuthenticated =
+        localStorage.getItem("syncspace_authenticated") === "true";
+
+    // ==========================================
+    // CHECK AUTH BEFORE ENTERING ROOM
+    // ==========================================
+
+    const requireAuthentication = () => {
+        if (!isAuthenticated) {
+            navigate("/login");
+            return false;
         }
-    }, []);
 
-    // ==========================================
-    // OPEN LOGIN
-    // ==========================================
-
-    const openLogin = () => {
-        setIsSignInOpen(true);
+        return true;
     };
 
     // ==========================================
@@ -36,11 +43,21 @@ export default function Home() {
     // ==========================================
 
     const joinRoom = () => {
+        setFormError("");
+
+        // Home is public.
+        // Room access is not.
+        if (!requireAuthentication()) {
+            return;
+        }
+
         const cleanName = name.trim();
         const cleanRoomId = roomId.trim().toUpperCase();
 
         if (!cleanName) {
-            setFormError("Add your name before entering a room.");
+            setFormError(
+                "Please enter your name before joining a room."
+            );
             return;
         }
 
@@ -51,8 +68,7 @@ export default function Home() {
             return;
         }
 
-        setFormError("");
-
+        // Store room/user information for the room UI.
         localStorage.setItem(
             "syncspace_username",
             cleanName
@@ -68,12 +84,6 @@ export default function Home() {
             cleanRoomId
         );
 
-        // Allow access to the whiteboard
-        localStorage.setItem(
-            "syncspace_authenticated",
-            "true"
-        );
-
         navigate(`/room/${cleanRoomId}`);
     };
 
@@ -82,16 +92,21 @@ export default function Home() {
     // ==========================================
 
     const createRoom = () => {
+        setFormError("");
+
+        // Creating a room also requires authentication.
+        if (!requireAuthentication()) {
+            return;
+        }
+
         const cleanName = name.trim();
 
         if (!cleanName) {
             setFormError(
-                "Add your name before creating a room."
+                "Please enter your name before creating a room."
             );
             return;
         }
-
-        setFormError("");
 
         const newRoomId = Math.random()
             .toString(36)
@@ -111,11 +126,6 @@ export default function Home() {
         localStorage.setItem(
             "syncspace_room",
             newRoomId
-        );
-
-        localStorage.setItem(
-            "syncspace_authenticated",
-            "true"
         );
 
         navigate(`/room/${newRoomId}`);
@@ -166,25 +176,64 @@ export default function Home() {
                 <div className="home-nav-actions">
 
                     <span className="nav-audience">
-                        Built for focused collaboration
+                        {isAuthenticated
+                            ? `Welcome, ${name || "User"}`
+                            : "Built for focused collaboration"}
                     </span>
 
-                    {/* SIGN IN BUTTON */}
+                    {isAuthenticated ? (
+                        <button
+                            className="sign-in-button"
+                            type="button"
+                            onClick={() => {
+                                localStorage.removeItem(
+                                    "syncspace_authenticated"
+                                );
 
-                    <button
-                        className="sign-in-button"
-                        type="button"
-                        onClick={openLogin}
-                    >
-                        <span>SIGN IN</span>
+                                localStorage.removeItem(
+                                    "syncspace_email"
+                                );
 
-                        <span
-                            className="login-arrow"
-                            aria-hidden="true"
+                                localStorage.removeItem(
+                                    "syncspace_username"
+                                );
+
+                                localStorage.removeItem(
+                                    "syncspace_role"
+                                );
+
+                                localStorage.removeItem(
+                                    "syncspace_room"
+                                );
+
+                                navigate("/");
+                            }}
                         >
-                            ↗
-                        </span>
-                    </button>
+                            <span>SIGN OUT</span>
+
+                            <span
+                                className="login-arrow"
+                                aria-hidden="true"
+                            >
+                                ↗
+                            </span>
+                        </button>
+                    ) : (
+                        <button
+                            className="sign-in-button"
+                            type="button"
+                            onClick={() => navigate("/login")}
+                        >
+                            <span>SIGN IN</span>
+
+                            <span
+                                className="login-arrow"
+                                aria-hidden="true"
+                            >
+                                ↗
+                            </span>
+                        </button>
+                    )}
 
                 </div>
 
@@ -195,10 +244,6 @@ export default function Home() {
             ========================================== */}
 
             <main className="home-main">
-
-                {/* ==========================================
-                    HERO
-                ========================================== */}
 
                 <section className="home-hero">
 
@@ -216,10 +261,11 @@ export default function Home() {
                         </h1>
 
                         <p>
-                            A focused workspace for technical interviews,
-                            collaborative problem solving and brainstorming.
-                            Draw on the whiteboard while writing code side
-                            by side.
+                            A focused workspace for technical
+                            interviews, collaborative problem
+                            solving and brainstorming. Draw on
+                            the whiteboard while writing code
+                            side by side.
                         </p>
 
                         <div className="hero-features">
@@ -244,7 +290,7 @@ export default function Home() {
                     </div>
 
                     {/* ==========================================
-                        JOIN CARD
+                        ROOM CARD
                     ========================================== */}
 
                     <form
@@ -268,8 +314,8 @@ export default function Home() {
                                 </h2>
 
                                 <p>
-                                    Join an existing interview or create
-                                    a new room.
+                                    Join an existing interview
+                                    or create a new room.
                                 </p>
 
                             </div>
@@ -301,7 +347,9 @@ export default function Home() {
                                     placeholder="Enter your name"
                                     value={name}
                                     onChange={(event) => {
-                                        setName(event.target.value);
+                                        setName(
+                                            event.target.value
+                                        );
                                         setFormError("");
                                     }}
                                 />
@@ -327,15 +375,18 @@ export default function Home() {
                                 <select
                                     id="role"
                                     value={role}
-                                    onChange={(event) =>
-                                        setRole(event.target.value)
-                                    }
+                                    onChange={(event) => {
+                                        setRole(
+                                            event.target.value
+                                        );
+                                        setFormError("");
+                                    }}
                                 >
-                                    <option value="Candidate">
-                                        Candidate
+                                    <option value="interviewee">
+                                        Interviewee
                                     </option>
 
-                                    <option value="Interviewer">
+                                    <option value="interviewer">
                                         Interviewer
                                     </option>
                                 </select>
@@ -413,13 +464,15 @@ export default function Home() {
 
                         <div className="privacy-note">
                             <span>🔒</span>
-                            Your workspace information is saved
-                            locally on this device.
+                            Sign in is required before
+                            entering a collaborative room.
                         </div>
 
                         <div
                             className={`form-feedback ${
-                                formError ? "is-visible" : ""
+                                formError
+                                    ? "is-visible"
+                                    : ""
                             }`}
                             role="alert"
                         >
@@ -475,8 +528,6 @@ export default function Home() {
 
                         <div className="preview-body">
 
-                            {/* SIDEBAR */}
-
                             <div className="preview-sidebar">
 
                                 <div className="preview-tool active">
@@ -511,8 +562,6 @@ export default function Home() {
 
                             </div>
 
-                            {/* CANVAS */}
-
                             <div className="preview-canvas">
 
                                 <div className="preview-grid"></div>
@@ -538,8 +587,6 @@ export default function Home() {
                                 </div>
 
                             </div>
-
-                            {/* CODE */}
 
                             <div className="preview-code">
 
@@ -609,15 +656,27 @@ export default function Home() {
 
             </footer>
 
-            <nav className="scroll-controls" aria-label="Page navigation">
+            {/* ==========================================
+                SCROLL CONTROLS
+            ========================================== */}
+
+            <nav
+                className="scroll-controls"
+                aria-label="Page navigation"
+            >
+
                 <button
                     type="button"
                     aria-label="Scroll up"
                     onClick={() =>
-                        document.querySelector(".home-page")?.scrollBy({
-                            top: -window.innerHeight * 0.85,
-                            behavior: "smooth",
-                        })
+                        document
+                            .querySelector(".home-page")
+                            ?.scrollBy({
+                                top:
+                                    -window.innerHeight *
+                                    0.85,
+                                behavior: "smooth",
+                            })
                     }
                 >
                     ↑
@@ -627,25 +686,20 @@ export default function Home() {
                     type="button"
                     aria-label="Scroll down"
                     onClick={() =>
-                        document.querySelector(".home-page")?.scrollBy({
-                            top: window.innerHeight * 0.85,
-                            behavior: "smooth",
-                        })
+                        document
+                            .querySelector(".home-page")
+                            ?.scrollBy({
+                                top:
+                                    window.innerHeight *
+                                    0.85,
+                                behavior: "smooth",
+                            })
                     }
                 >
                     ↓
                 </button>
+
             </nav>
-
-            {/* ==========================================
-                SIGN IN MODAL
-            ========================================== */}
-
-            {isSignInOpen && (
-                <LoginModal
-                    onClose={() => setIsSignInOpen(false)}
-                />
-            )}
 
         </div>
     );
