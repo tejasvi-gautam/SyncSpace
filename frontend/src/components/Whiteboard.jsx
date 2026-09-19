@@ -42,7 +42,6 @@ function Whiteboard() {
 
     const [historyVersion, setHistoryVersion] =
         useState(0);
-    
 
     const [showUserRoster, setShowUserRoster] =
         useState(false);
@@ -1819,10 +1818,20 @@ function Whiteboard() {
             return;
         }
 
+        // -------------------------------------------------
+        // Normalize backend user object
+        // -------------------------------------------------
+
         const normalizeUser = (user) => {
             if (!user) {
                 return null;
             }
+
+            const name =
+                typeof user.name ===
+                "string"
+                    ? user.name.trim()
+                    : "";
 
             return {
                 id:
@@ -1832,16 +1841,15 @@ function Whiteboard() {
 
                 userId:
                     user.userId ??
-                    user.id,
+                    user.id ??
+                    null,
 
                 socketId:
-                    user.socketId,
+                    user.socketId ??
+                    null,
 
                 name:
-                    typeof user.name ===
-                    "string"
-                        ? user.name
-                        : "Unknown user",
+                    name || "Unknown user",
 
                 role:
                     typeof user.role ===
@@ -1850,6 +1858,10 @@ function Whiteboard() {
                         : "Collaborator",
             };
         };
+
+        // -------------------------------------------------
+        // ROOM USERS
+        // -------------------------------------------------
 
         const handleRoomUsers = (
             users
@@ -1869,15 +1881,22 @@ function Whiteboard() {
                     (user) => ({
                         ...user,
 
+                        // IMPORTANT:
+                        // socket.id is NOT user.userId.
+                        // For now, identify "you"
+                        // using the same username
+                        // stored when entering the room.
                         self:
-                            user.userId ===
-                                socket.id ||
                             user.name ===
-                                currentUser.name,
+                            currentUser.name,
                     })
                 )
             );
         };
+
+        // -------------------------------------------------
+        // INITIAL ROOM STATE
+        // -------------------------------------------------
 
         const handleInitialState = (
             state
@@ -1953,6 +1972,10 @@ function Whiteboard() {
             }
         };
 
+        // -------------------------------------------------
+        // WHITEBOARD EVENTS
+        // -------------------------------------------------
+
         const handleWhiteboardEvent = (
             message
         ) => {
@@ -2022,6 +2045,10 @@ function Whiteboard() {
             }
         };
 
+        // -------------------------------------------------
+        // CODE CHANGE
+        // -------------------------------------------------
+
         const handleCodeChange = (
             message
         ) => {
@@ -2040,14 +2067,29 @@ function Whiteboard() {
             setCodeSaved(false);
         };
 
+        // -------------------------------------------------
+        // JOIN ROOM
+        // -------------------------------------------------
+
         const joinRoom = () => {
-            if (socket.connected) {
-                socket.emit(
-                    "join-room",
-                    roomId
-                );
+            console.log("JOIN ROOM FUNCTION CALLED", roomId);
+            if (!socket.connected) {
+                return;
             }
+            console.log("EMITTING JOIN-ROOM:", roomId);
+
+            socket.emit(
+                "join-room",
+                {
+                    roomId,
+                    name: currentUser.name
+                }
+);
         };
+
+        // -------------------------------------------------
+        // SOCKET LISTENERS
+        // -------------------------------------------------
 
         socket.on(
             "room-users",
@@ -2073,12 +2115,23 @@ function Whiteboard() {
             "connect",
             joinRoom
         );
+        if (socket.connected) {
+            joinRoom();
+        }
+
+        // -------------------------------------------------
+        // CONNECT / JOIN
+        // -------------------------------------------------
 
         if (!socket.connected) {
             socket.connect();
         } else {
             joinRoom();
         }
+
+        // -------------------------------------------------
+        // CLEANUP
+        // -------------------------------------------------
 
         return () => {
             socket.off(

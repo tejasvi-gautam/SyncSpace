@@ -8,22 +8,30 @@ export const initializeSocket = (io) => {
         // JOIN ROOM
         // ==========================================
 
-        socket.on("join-room", (roomId) => {
+       socket.on("join-room", ({ roomId, name }) => {
+        console.log("JOIN-ROOM EVENT RECEIVED:", roomId);
+
             if (!roomId) return;
-            if(!roomUsers.has(roomId)) {
+
+            if (!roomUsers.has(roomId)) {
                 roomUsers.set(roomId, new Map());
             }
+
             roomUsers.get(roomId).set(socket.id, {
                 socketId: socket.id,
-                userId: socket.user.id,
-                name:socket.user.name
+                userId: socket.user.userId,
+                name: name || "Unknown user"
             });
+
             socket.join(roomId);
-            const usersInRoom = Array.from(roomUsers.get(roomId).values());
+
+            const usersInRoom =
+                Array.from(roomUsers.get(roomId).values());
+
             io.to(roomId).emit("room-users", usersInRoom);
 
             console.log(
-                `${socket.id} joined room ${roomId}`
+                `${socket.id} joined room ${roomId} as ${name}`
             );
         });
 
